@@ -1,8 +1,30 @@
 {
-  "name": "ifc-studio",
+  "name": "bim-os",
   "version": "0.1.0",
   "private": true,
-  "description": "Next.js BIM workbench built on That Open Engine: IFC viewer with analysis and Fragments export, plus RVT and NWD viewers with IFC export.",
+  "description": "Open-source BIM workbench in the browser: IFC viewer and analysis, Revit and Navisworks import, conversion to IFC, and COBie and asset registers for facilities management.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khjabir/bim-os.git"
+  },
+  "homepage": "https://github.com/khjabir/bim-os#readme",
+  "bugs": {
+    "url": "https://github.com/khjabir/bim-os/issues"
+  },
+  "keywords": [
+    "bim",
+    "ifc",
+    "openbim",
+    "revit",
+    "navisworks",
+    "cobie",
+    "cafm",
+    "facilities-management",
+    "web-ifc",
+    "thatopen",
+    "nextjs"
+  ],
   "engines": {
     "node": ">=20.9"
   },
