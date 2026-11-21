@@ -1,0 +1,41 @@
+{
+  "relations": {
+    "IFCRELASSOCIATESCLASSIFICATION": {
+      "forRelating": "ClassificationRefForObjects",
+      "forRelated": "HasAssociations"
+    },
+    "IFCRELASSIGNSTOGROUP": {
+      "forRelating": "IsGroupedBy",
+      "forRelated": "HasAssignments"
+    },
+    "IFCRELVOIDSELEMENT": {
+      "forRelating": "HasOpenings",
+      "forRelated": "VoidsElements"
+    },
+    "IFCRELFILLSELEMENT": {
+      "forRelating": "HasFillings",
+      "forRelated": "FillsVoids"
+    }
+  },
+  "abstractClasses": [
+    "IFCCLASSIFICATION",
+    "IFCCLASSIFICATIONREFERENCE",
+    "IFCGROUP",
+    "IFCSYSTEM",
+    "IFCZONE",
+    "IFCBUILDINGSYSTEM",
+    "IFCDISTRIBUTIONSYSTEM",
+    "IFCDISTRIBUTIONCIRCUIT",
+    "IFCDOORSTYLE",
+    "IFCWINDOWSTYLE",
+    "IFCCONVERSIONBASEDUNIT",
+    "IFCCONVERSIONBASEDUNITWITHOFFSET",
+    "IFCCOMPLEXPROPERTY",
+    "IFCPROPERTYREFERENCEVALUE",
+    "IFCPHYSICALCOMPLEXQUANTITY",
+    "IFCINVENTORY",
+    "IFCASSET",
+    "IFCTASK",
+    "IFCTASKTIME"
+  ]
+}
