@@ -1,6 +1,6 @@
 # IFC viewer
 
-[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Development](development.md) · [Testing](testing.md)
+[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Facility management](facility.md) · [Development](development.md) · [Testing](testing.md)
 
 The IFC viewer (`/ifc`) opens IFC, ifcZIP and Fragments files with [That Open Engine](https://github.com/ThatOpen), one at a time or a whole project folder at once, with analysis tools, and exports Fragments (`.frag`) and IFC.
 

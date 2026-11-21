@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { HomeDashboard } from "@/components/fm/HomeDashboard";
 
 export default function Home() {
-  redirect("/ifc");
+  return <HomeDashboard />;
 }

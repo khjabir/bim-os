@@ -1,6 +1,6 @@
 # Convert to IFC
 
-[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Development](development.md) · [Testing](testing.md)
+[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Facility management](facility.md) · [Development](development.md) · [Testing](testing.md)
 
 The Convert page assembles IFC4 files from whatever is at hand: a Revit model, a Navisworks model, a model someone shared in the Autodesk Viewer, floor plan drawings, or a mix. It works in four steps, top to bottom on the page.
 

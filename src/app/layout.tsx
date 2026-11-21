@@ -1,11 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AppHeader } from "@/components/shell/AppHeader";
+import { AppShell } from "@/components/shell/AppShell";
 
 export const metadata: Metadata = {
   title: { default: "IFC Studio", template: "%s · IFC Studio" },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "IFC Studio", statusBarStyle: "default" },
+  icons: { apple: "/icons/icon-192.png" },
   description:
-    "Open IFC, RVT and NWD models in the browser, analyse them, and export Fragments or IFC. Built on That Open Engine.",
+    "Onboard buildings for facility management from their models, plan and track maintenance, label assets, connect live data, and work with IFC, Revit and Navisworks models in the browser. Built on That Open Engine.",
 };
 
 export const viewport: Viewport = {
@@ -25,10 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <div className="flex h-dvh flex-col">
-          <AppHeader />
-          <main className="min-h-0 flex-1">{children}</main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

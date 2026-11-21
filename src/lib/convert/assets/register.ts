@@ -324,7 +324,7 @@ export function splitRoom(text: string): { name: string; number: string } {
 // Navisworks tabs and Revit groups that are not a room's (a tab named after a room carries its level).
 const KNOWN_TABS = new Set(
   [
-    "item", "element", "revit type", "element id", "identity data", "constraints", "dimensions", "phasing", "other", "mechanical", "mechanical - flow",
+    "item", "element", "type", "revit type", "element id", "identity data", "constraints", "dimensions", "phasing", "other", "mechanical", "mechanical - flow",
     "mechanical - loads", "electrical", "electrical - loads", "electrical - lighting", "electrical - circuiting", "plumbing", "text", "materials and finishes",
     "structural", "graphics", "data", "ifc parameters", "analytical properties", "hyperlinks", "element properties", "revit material", "material",
     "base constraint", "top constraint", "reference level", "schedule level", "base level", "top level", "level", "phase", "phase id", "design option",
@@ -1243,7 +1243,11 @@ export function buildRegister(input: RegisterInput, options: AssetOptions, onPro
     index(a.values.assetIdentifier, a);
     if (a.category === "Electrical Equipment") index(a.type, a);
   }
+  // IFC models name the asset an element is part of by its GlobalId.
+  const byGuid = new Map(registerAssets.map((a) => [a.guid, a]));
   const findAsset = (text: string, preferCategory?: string): RegisterAsset | null => {
+    const g = byGuid.get(text.trim());
+    if (g) return g;
     const k = upper(text);
     const primary = primaryBoard.get(k);
     if (primary) return primary;

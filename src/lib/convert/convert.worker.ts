@@ -7,11 +7,15 @@ import { inflateIfNeeded, parseJob, parseProps, readExtractorFiles, type RawSour
 import { previewTransfer, type PreviewData } from "./preview";
 import { summarise, type AssetOptions } from "./assets/register";
 import type { WorkbookSettings } from "./assets/workbook";
+import { workspaceFromRegister } from "./assets/workspace";
+import type { IfcSourceInfo } from "./ifc-source";
 import type { ConvertOptions } from "./types";
 
 export type WorkerRequest =
   | { id: number; type: "addFiles"; files: { name: string; blob: Blob }[] }
   | { id: number; type: "addJobs"; jobs: { name: string; bin: Blob; props: Blob | null; textures?: (Blob | null)[] }[] }
+  /** IFC files read for their assets, rooms and systems (web-ifc in this worker). */
+  | { id: number; type: "addIfc"; files: { name: string; blob: Blob }[]; wasmPath: string }
   | { id: number; type: "remove"; jobs: string[] }
   | { id: number; type: "clear" }
   | { id: number; type: "storeys"; partIds: string[] }
@@ -20,6 +24,8 @@ export type WorkerRequest =
   | { id: number; type: "preview"; options: ConvertOptions; budget: number }
   | { id: number; type: "assets"; options: ConvertOptions; assets: AssetOptions }
   | { id: number; type: "assetFiles"; options: ConvertOptions; assets: AssetOptions; contact: Pick<WorkbookSettings, "contactEmail" | "contactCompany" | "contactPhone" | "currency"> }
+  /** The register as a facility workspace (assets, rooms, systems). */
+  | { id: number; type: "workspace"; options: ConvertOptions; assets: AssetOptions }
   | { id: number; type: "cancel" };
 
 const converter = new Converter();
@@ -55,6 +61,22 @@ async function handle(request: WorkerRequest) {
       const added = converter.addJobs(raw, progress);
       return { ...state(), added, ignored: [] };
     }
+    case "addIfc": {
+      // web-ifc is loaded only when an IFC file is read.
+      const { readIfcFile } = await import("./ifc-source");
+      const raw: RawSourceJob[] = [];
+      const infos: IfcSourceInfo[] = [];
+      for (const f of request.files) {
+        let name = f.name.replace(/\.(ifc|ifczip)$/i, "").replace(/[^\w.-]+/g, "-").slice(0, 60) || "ifc";
+        for (let n = 2; converter.jobs.has(name) || raw.some((r) => r.name === name); n++) name = `${name.replace(/-\d+$/, "")}-${n}`;
+        const { job, info } = await readIfcFile(f.blob, f.name, name, request.wasmPath, progress);
+        raw.push(job);
+        infos.push(info);
+      }
+      const added = converter.addJobs(raw, progress);
+      added.forEach((name, i) => (infos[i].job = name));
+      return { ...state(), added, ignored: [], ifc: infos };
+    }
     case "remove":
       for (const name of request.jobs) converter.removeJob(name);
       return state();
@@ -77,6 +99,11 @@ async function handle(request: WorkerRequest) {
     case "assetFiles": {
       const { register, cobie, workbook, sld } = await converter.assetWorkbooks(request.options, request.assets, request.contact, progress);
       return { summary: summarise(register), cobie, workbook, sld };
+    }
+    case "workspace": {
+      const register = converter.assetRegister(request.options, request.assets, progress);
+      progress("Preparing the workspace", 0, 0);
+      return { summary: summarise(register), ...workspaceFromRegister(register) };
     }
     case "cancel":
       converter.cancelled = true;

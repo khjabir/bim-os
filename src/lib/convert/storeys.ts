@@ -204,3 +204,46 @@ export function levelIndex(storeys: StoreyDef[]): Map<string, string> {
   for (const storey of storeys) for (const level of storey.levels) if (!map.has(level)) map.set(level, storey.key);
   return map;
 }
+
+/**
+ * Storeys of several models (the storeys each IFC file defines) as one list. Storeys of different models
+ * become one when they are at the same height (within `tolerance` metres), or go by the same name or the
+ * same distinctive words ("L04 - Upper Concourse Level", "04-Upper Concourse Level") within `nameReach`
+ * metres of each other; every name they go by becomes one of its levels.
+ */
+export function mergeStoreys(lists: StoreyDef[][], tolerance = 0.3, nameReach = 3): StoreyDef[] {
+  const all = lists.flatMap((list, source) => list.map((storey) => ({ storey, source, key: levelKey(storey.name), name: storey.name.trim().toLowerCase() })));
+  const parent = all.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < all.length; i++)
+    for (let j = i + 1; j < all.length; j++) {
+      const a = all[i],
+        b = all[j];
+      if (a.source === b.source) continue;
+      const gap = Math.abs(a.storey.elevation - b.storey.elevation);
+      const sameName = a.name === b.name || (a.key !== "" && a.key === b.key);
+      if (gap <= tolerance || (sameName && gap <= nameReach)) parent[find(i)] = find(j);
+    }
+  const groups = new Map<number, typeof all>();
+  for (let i = 0; i < all.length; i++) {
+    const root = find(i);
+    const list = groups.get(root);
+    if (list) list.push(all[i]);
+    else groups.set(root, [all[i]]);
+  }
+  const merged = [...groups.values()].map((members) => {
+    // Named and placed after the storey with the most elements, an architectural name before a structural one.
+    const ranked = [...members].sort((a, b) => Number(STRUCTURAL_NAME.test(a.storey.name)) - Number(STRUCTURAL_NAME.test(b.storey.name)) || b.storey.count - a.storey.count);
+    return { main: ranked[0].storey, members };
+  });
+  merged.sort((a, b) => a.main.elevation - b.main.elevation);
+  const used = new Set<string>();
+  return merged.map(({ main, members }, index) => {
+    const base = main.name.trim() || `Level ${index}`;
+    let name = base;
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})`;
+    used.add(name.toLowerCase());
+    const levels = [...new Set(members.flatMap((m) => [m.storey.name, ...m.storey.levels]))];
+    return { key: `s${index}`, name, elevation: round3(main.elevation), levels, count: members.reduce((n, m) => n + m.storey.count, 0) };
+  });
+}

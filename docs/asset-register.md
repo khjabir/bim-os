@@ -1,6 +1,6 @@
 # Asset register
 
-[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Development](development.md) · [Testing](testing.md)
+[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Facility management](facility.md) · [Development](development.md) · [Testing](testing.md)
 
 The *Asset register* card on the [Convert page](convert.md) lists the model's equipment for facilities management (CAFM) and onboarding: make, model, serial number, bar code, tag, installation date, manufacturing year, warranty (start, duration, end, guarantor), expected life and end of life, replacement cost, PPM tasks and their frequency, the room each item is in, its systems, the board it is fed from, what serves it and what it serves, and the rooms it serves; the electrical distribution as single-line diagrams; MEP technical data; fire and life safety data; asset kinds, codes and suggested classification; with the model's floors, rooms and zones.
 

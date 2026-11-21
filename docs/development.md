@@ -1,11 +1,14 @@
 # Development notes
 
-[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Development](development.md) · [Testing](testing.md)
+[README](../README.md) · [IFC viewer](ifc-viewer.md) · [Revit and Navisworks](revit-and-navisworks.md) · [Convert to IFC](convert.md) · [Asset register](asset-register.md) · [Facility management](facility.md) · [Development](development.md) · [Testing](testing.md)
 
 ## Project layout
 
 ```
-src/app/                  Pages (/ifc, /rvt, /nwd, /convert) and API routes (/api/assistant, /api/aps/*)
+src/app/                  Pages (/, /assets, /maintenance, /live, /labels, /field, /onboard, /settings, /ifc, /rvt, /nwd,
+                          /convert) and API routes (/api/assistant, /api/aps/*)
+src/components/shell/     The frame of every page: sidebar, phone bar, header search (the search palette), theme
+src/components/fm/        Facility pages: Home, assets, maintenance, labels, field app, live data, onboarding, settings
 src/components/viewer/    The IFC workbench: toolbar, overlays, side panels
 src/components/nwd/       The Navisworks page
 src/components/convert/   The Convert page: sources, viewer link, plan editor, assembly, generation
@@ -22,9 +25,14 @@ src/lib/lmv/              Autodesk viewer session, object grouping, IFC class gu
 src/lib/ifc-writer/       IFC4 writer for tessellated models
 src/lib/convert/          Converter: extract reader, element model, materials, classes, disciplines, storeys, IFC4 writer, 3D preview
                           with instancing, conversion worker, plan tracing (plans/), asset register and COBie (assets/)
+src/lib/fm/               The facility workspace: data model, IndexedDB storage and store, search and filters, task
+                          library and scheduling, workspace and change files, QR codes, alarms, Brick, the demo,
+                          live data (live/: MQTT over WebSocket, the simulator, CSV readings)
+src/lib/convert/ifc-source.ts  IFC files (web-ifc) as a source of the asset register, like a viewer extract
 src/lib/utils/xlsx.ts     A small Excel (.xlsx) writer for the asset workbooks
 public/convert/           The viewer extractor (bookmarklet and in-app)
 public/rvt/               rvt-rs WebAssembly build and its worker
+public/sw.js              Service worker for offline use (production builds), with manifest.webmanifest and icons/
 scripts/                  Asset copy, command-line converter and combiner, rvt-rs rebuild
 ```
 

@@ -172,3 +172,31 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Printing (labels): only what a page puts in a .print-portal at the top of <body>. */
+.print-portal {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body > *:not(.print-portal) {
+    display: none !important;
+  }
+  .print-portal {
+    display: block !important;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* An input inside a box that shows focus itself (search boxes): no second ring. */
+.focus-ring-none:focus-visible {
+  outline: none;
+}

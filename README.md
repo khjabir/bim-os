@@ -2,10 +2,10 @@
 
 # bim-os
 
-**An open-source BIM workbench that runs in your browser.**
+**An open-source BIM and facility-management workbench that runs in your browser.**
 
-View and analyse IFC models, bring in Revit and Navisworks, convert models and floor plans to IFC,<br>
-and hand over asset data (COBie, asset registers, single-line diagrams) for facilities management.
+Onboard a building from its models, keep its assets and maintenance in order, label and check them on site,<br>
+connect live data from its systems, and view, analyse and convert IFC, Revit and Navisworks models.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js >= 20.9](https://img.shields.io/badge/node-%3E%3D20.9-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
@@ -14,18 +14,29 @@ and hand over asset data (COBie, asset registers, single-line diagrams) for faci
 [![Built on That Open Engine](https://img.shields.io/badge/built%20on-That%20Open%20Engine-6528D7)](https://github.com/ThatOpen)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Documentation](#documentation) · [Contributing](#contributing) · [License](#license)
+[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Documentation](#documentation) · [Roadmap](ROADMAP.md) · [Contributing](#contributing) · [License](#license)
 
 </div>
 
 ---
 
-bim-os is a local-first web app for working with building information models. IFC files are opened, analysed and converted on your own machine, in WebAssembly and web workers; nothing is uploaded unless you choose one of the optional cloud routes (Autodesk Platform Services for Revit and Navisworks, or the AI assistant with your own API key).
+bim-os is a local-first web app for running buildings with their models and for working with the models themselves. Models are opened, analysed and converted on your own machine, in WebAssembly and web workers, and a building's facility data stays in the browser; nothing is uploaded unless you choose one of the optional cloud routes (Autodesk Platform Services for Revit and Navisworks, or the AI assistant with your own API key).
 
 > [!NOTE]
 > bim-os was developed under the name *IFC Studio*. The app's header, the viewer extractor and the IFC property sets it writes (`IFCStudio_*`) still use that name; see [Development notes](docs/development.md#names-left-from-ifc-studio).
 
 ## Features
+
+The same sidebar is on every page (a bottom bar on phones), grouped as Home, Facility, Onboarding and Models, and one search box in the header (<kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>/</kbd>) finds pages, actions, assets, rooms, systems, work orders and live points.
+
+### Facility management
+
+- **Onboarding** (`/onboard`): a step-by-step wizard from the building's IFC files (any discipline, also .ifczip and folders), or Revit, Navisworks and viewer extracts read on the Convert page, to a facility workspace: building details prefilled from the models, floors from their storeys, the asset categories, the information the models carry, gaps filled once per type, maintenance planned, and COBie, the asset register and single-line diagrams to hand on. A 270 MB electrical IFC is read in the browser in about half a minute.
+- **Assets** (`/assets`): a register that stays fast with tens of thousands of assets, one search box with filters (`kind:pump floor:L03 status:incomplete missing:serial`), facets, bulk edits; each asset's page with its information (changes kept next to the model's values, with who and when, and offered to the rest of its type), the site check, maintenance, live readings, photos, connections, label and history; Excel and CSV exports with the changes.
+- **Maintenance** (`/maintenance`): a starting library of about 80 tasks per asset kind (to review), plans with first due dates spread out, the due list, a month calendar, and work orders (planned, reactive, inspection) with priorities, assignees, notes and completion that moves the plan on; Excel exports.
+- **Labels and the field app** (`/labels`, `/field`): printable QR labels for label printers and sheets that open the asset on a phone; a phone view to scan or search, check, correct, photograph and report faults, working offline once opened, with changes shared as a file and merged on the desktop.
+- **Live data** (`/live`): MQTT over WebSocket (BACnet, Modbus and other systems through a gateway), CSV readings and a simulator; points linked to assets from their names, alarm limits, an alarm list with acknowledgement, readings on the asset page, and a Brick (Turtle) export of the building.
+- **Home** (`/`) shows the building at a glance; **Settings** (`/settings`) exports the whole workspace as one file to back it up or move it to another device. Everything is kept in the browser (IndexedDB); a demo building shows it all without a model.
 
 ### IFC viewer and model analysis (`/ifc`)
 
@@ -68,9 +79,10 @@ bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind
 ```mermaid
 flowchart LR
   subgraph browser["Your browser"]
-    pages["Pages<br/>/ifc · /rvt · /nwd · /convert"]
+    pages["Pages<br/>/ · /assets · /maintenance · /live · /labels · /field · /onboard<br/>/ifc · /rvt · /nwd · /convert"]
     workers["Web workers<br/>web-ifc · rvt-rs · IFC writer<br/>plan tracing · asset register"]
     engine["That Open Engine<br/>three.js · Fragments"]
+    store[("IndexedDB<br/>facility workspace")]
   end
   subgraph server["Next.js API routes (optional)"]
     assistant["/api/assistant"]
@@ -78,6 +90,8 @@ flowchart LR
   end
   pages <--> workers
   pages <--> engine
+  pages <--> store
+  pages -- "MQTT over WebSocket" --> broker["Your MQTT broker (optional)"]
   pages -- "questions" --> assistant
   assistant --> anthropic["Anthropic API"]
   pages -- "RVT / NWD files" --> aps
@@ -138,16 +152,18 @@ Everything is optional. Copy `.env.example` to `.env.local`, fill in what you ne
 | [Revit and Navisworks](docs/revit-and-navisworks.md) | The in-browser Revit reader, the Autodesk cloud route and the Navisworks viewer |
 | [Convert to IFC](docs/convert.md) | Sources, Autodesk Viewer links, floor plans, assembling, generating, materials and textures |
 | [Asset register](docs/asset-register.md) | What is read for each asset, electrical distribution, technical and fire data, codes, and the COBie, register and diagram outputs |
+| [Facility management](docs/facility.md) | Navigation and search, onboarding, assets, maintenance, labels and the field app, live data, the workspace file |
 | [Development notes](docs/development.md) | Project layout, pinned dependency versions, rebuilding the Revit reader, names left from IFC Studio |
 | [Testing and known limits](docs/testing.md) | What has been tested, with which models, and what has not |
 
 ## Project layout
 
 ```
-src/app/          Pages (/ifc, /rvt, /nwd, /convert) and API routes (/api/assistant, /api/aps/*)
-src/components/   The interface: viewer, Navisworks page, Convert page, charts, shared UI
-src/lib/          Engine, IFC worker, analysis, assistant, Revit and Autodesk clients, IFC writers,
-                  converter (with the asset register in convert/assets/) and utilities
+src/app/          Pages (facility pages, /ifc, /rvt, /nwd, /convert) and API routes (/api/assistant, /api/aps/*)
+src/components/   The interface: app shell and search, facility pages (fm/), viewer, Navisworks page, Convert page,
+                  charts, shared UI
+src/lib/          Facility workspace (fm/), engine, IFC worker, analysis, assistant, Revit and Autodesk clients,
+                  IFC writers, converter (with the asset register in convert/assets/) and utilities
 public/           The viewer extractor, the rvt-rs WebAssembly reader and sample files
 scripts/          Asset copy, command-line converter and combiner, rvt-rs rebuild
 docs/             Documentation
@@ -163,6 +179,8 @@ bim-os is at version 0.1 and changes quickly. Things to know before relying on i
 - The Autodesk Platform Services routes and the AI assistant were tested against stand-ins, not the live services.
 - Models converted from Autodesk viewer data keep the viewer's triangles; parametric solids cannot be recovered from it.
 - Very large federated projects are limited by the memory a browser tab can use; the [IFC viewer docs](docs/ifc-viewer.md#how-much-a-folder-can-hold) give measured figures.
+- Facility data is kept per browser and moves between devices as files; there is no live sync between devices yet. Live data arrives only while the app is open.
+- Scanning labels inside the field app needs a browser that reads codes itself (Chrome on Android, Edge); elsewhere the phone's camera app opens labels that carry the app's address.
 - Only Chromium-based browsers have been tested.
 
 [Testing and known limits](docs/testing.md) has the details.
@@ -182,6 +200,7 @@ bim-os stands on these projects:
 | [three.js](https://threejs.org), [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh), [camera-controls](https://github.com/yomotsu/camera-controls) | 3D rendering, picking and navigation | MIT |
 | [rvt-rs](https://github.com/DrunkOnJava/rvt-rs) 0.17.0 | In-browser Revit reader, vendored in `public/rvt/` with its licence, notice and crate list | Apache-2.0 |
 | [pdf.js](https://github.com/mozilla/pdf.js) | Floor-plan PDFs | Apache-2.0 |
+| [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | QR codes on asset labels | MIT |
 | [FlatBuffers](https://github.com/google/flatbuffers) | Writing combined Fragments files | Apache-2.0 |
 | [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) | The AI assistant | Apache-2.0 |
 | [Next.js](https://nextjs.org), [React](https://react.dev), [Tailwind CSS](https://tailwindcss.com), [Zustand](https://github.com/pmndrs/zustand), [TanStack Virtual](https://tanstack.com/virtual), [Lucide](https://lucide.dev) | App framework and interface | MIT (Lucide: ISC) |
