@@ -13,6 +13,7 @@
 // Like the IFC worker, one instance serves one job and is then terminated.
 
 import type { InflateRequest, InflateResponse } from "./protocol";
+import { announceReady } from "@/lib/utils/worker-ready";
 import { crc32, UNPACK_MISMATCH } from "./zip-archive.mjs";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -104,3 +105,5 @@ ctx.onmessage = async (event: MessageEvent<InflateRequest>) => {
     });
   }
 };
+
+announceReady("unzip");

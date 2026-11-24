@@ -24,7 +24,8 @@ src/lib/aps/              Autodesk Platform Services: server calls and browser c
 src/lib/lmv/              Autodesk viewer session, object grouping, IFC class guessing
 src/lib/ifc-writer/       IFC4 writer for tessellated models
 src/lib/convert/          Converter: extract reader, element model, materials, classes, disciplines, storeys, IFC4 writer, 3D preview
-                          with instancing, conversion worker, plan tracing (plans/), asset register and COBie (assets/)
+                          with instancing, conversion worker, plans (plans/: DXF reader, PDF line work, recognition of
+                          walls, doors, windows, rooms and columns, picture tracing), asset register and COBie (assets/)
 src/lib/fm/               The facility workspace: data model, IndexedDB storage and store, search and filters, task
                           library and scheduling, workspace and change files, QR codes, alarms, Brick, the demo,
                           live data (live/: MQTT over WebSocket, the simulator, CSV readings)

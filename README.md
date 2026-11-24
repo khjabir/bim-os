@@ -53,10 +53,11 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ### Convert to IFC (`/convert`)
 
-- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor-plan PDFs and images, or a mix of them.
+- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor plans (DXF, PDF, images), or a mix of them.
 - One IFC per discipline plus a federated model, sharing GlobalIds, site and storeys, so the files line up.
 - IFC classes and predefined types from Revit categories and family names, Revit GUIDs kept as GlobalIds, type objects, materials, surface styles, textures and vertex colours, and shared shapes written once.
-- Floor plans: set the scale, align, trace walls and the slab, correct them, and write IfcWall and IfcSlab.
+- Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans and images are traced. Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
+- Each IFC can also be downloaded as That Open Fragments (.frag).
 - A 3D preview with materials and textures before anything is generated.
 
 ### Asset information for facilities management

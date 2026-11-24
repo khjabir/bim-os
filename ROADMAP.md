@@ -104,6 +104,18 @@ The same sidebar is on every page (on phones a bottom bar), grouped by what peop
 
 ## Phase 2: next
 
+### Drawings to BIM (in the browser, no AI service or key)
+
+- [x] DXF (any release, ASCII or binary) and PDFs exported from CAD read line by line: walls (pairs, fills, MLINE, wide polylines, curved), doors and their swing, windows, plain openings, rooms named from their texts, columns and the slab
+- [x] Layer roles from AIA, ISO 13567, Revit and plain-language layer names in several languages, or from the line work; PDFs without layers grouped by pen
+- [x] Several plans in one drawing as storeys; units and scales from the file, the sheet or the door sizes
+- [x] IfcDoor and IfcWindow in openings that void the walls, IfcSpace, IfcColumn; .frag downloads
+- [ ] Scans and photos: text reading for room names and dimensions, automatic scale, door and window detection and click-to-outline rooms, with small models trained on openly licensed plans
+- [ ] An optional on-device assistant for room types, notes and plain-language edits
+- [ ] DWG through an optional add-on (LibreDWG is GPL, so it stays separate from the MIT code)
+- [ ] Mitred wall corners at any angle, stairs, curtain walls, grids
+
+
 ### Onboarding and data
 
 - [ ] COBie workbook import (a COBie file as a source, and edits merged back)

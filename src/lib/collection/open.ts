@@ -9,6 +9,7 @@
 //      show each when that leaves room for the conversions still to come
 
 import type { PreparedModel, ViewerEngine } from "@/lib/engine/engine";
+import { readyGate } from "@/lib/utils/worker-ready";
 import { prepareModel } from "@/lib/engine/open-files";
 import { pushToast, removeTask, uid, upsertTask } from "@/lib/store";
 import { formatBytes, formatDuration } from "@/lib/utils/format";
@@ -148,6 +149,7 @@ async function analyse(current: Session, rows: PlanRow[]) {
   }
 
   const worker = new Worker(new URL("./scan.worker.ts", import.meta.url), { type: "module" });
+  const gate = readyGate(worker, "scan");
   current.worker = worker;
   const sizes = new Map(rows.map((row) => [row.key, row.size]));
   let finished = 0;
@@ -156,6 +158,7 @@ async function analyse(current: Session, rows: PlanRow[]) {
     update((plan) => ({ ...plan, scannedBytes: finished }));
   };
   worker.onmessage = (event: MessageEvent<ScanResponse>) => {
+    if (gate.handle(event.data)) return;
     if (session !== current) return;
     const message = event.data;
     if (message.type === "progress") {
@@ -180,7 +183,7 @@ async function analyse(current: Session, rows: PlanRow[]) {
     current.worker = null;
     update((plan) => ({ ...plan, analysing: false }));
   };
-  worker.postMessage(jobs);
+  gate.post(jobs);
 }
 
 function applyRepeats(current: Session) {

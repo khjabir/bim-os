@@ -60,7 +60,37 @@ export interface PlanWall {
   external?: boolean;
 }
 
-/** A traced floor plan, in metres in the project frame (relative to the site origin). */
+/** A door, window or plain opening in a plan wall. */
+export interface PlanOpening {
+  /** Index of the host wall in the plan's walls. */
+  wall: number;
+  kind: "door" | "window" | "opening";
+  /** Metres from the wall's start (a) to the opening's near edge, and its width. */
+  offset: number;
+  width: number;
+  /** Metres above the storey's floor, and the opening's height. */
+  sill: number;
+  height: number;
+  /** Doors: IFC operation type (SINGLE_SWING_LEFT, DOUBLE_DOOR_SINGLE_SWING, …). */
+  operation: string | null;
+  /** Doors: the side of the wall the leaf opens to, +1 left of a -> b, -1 right, 0 unknown. */
+  swingSide: 1 | -1 | 0;
+  /** Block or type name from the drawing. */
+  name: string | null;
+}
+
+export interface PlanRoom {
+  outline: [number, number][];
+  name: string | null;
+  number: string | null;
+}
+
+export interface PlanColumn {
+  outline: [number, number][] | null;
+  circle: { c: [number, number]; r: number } | null;
+}
+
+/** A floor plan, in metres in the project frame (relative to the site origin). */
 export interface PlanPart {
   id: string;
   name: string;
@@ -70,6 +100,16 @@ export interface PlanPart {
   storey: { name: string; elevation: number; height: number };
   walls: PlanWall[];
   slab: { outline: [number, number][]; thickness: number } | null;
+  openings?: PlanOpening[];
+  rooms?: PlanRoom[];
+  columns?: PlanColumn[];
+  /** How the plan was read: "traced" from a picture, or "read" from CAD line work. */
+  basis?: "traced" | "read";
+}
+
+/** Plans that have anything to write. */
+export function planHasContent(p: PlanPart): boolean {
+  return p.walls.length > 0 || Boolean(p.slab) || Boolean(p.rooms?.length) || Boolean(p.columns?.length);
 }
 
 export interface ConvertOptions {

@@ -68,7 +68,8 @@ export interface TypeDef {
 
 export type ProfileDef =
   | { type: "rectangle"; x: number; y: number; xDim: number; yDim: number }
-  | { type: "polygon"; points: [number, number][] };
+  | { type: "polygon"; points: [number, number][] }
+  | { type: "circle"; x: number; y: number; r: number };
 
 export type ItemDef =
   | { kind: "mesh"; mesh: MeshText; style: StyleDef }
@@ -139,6 +140,19 @@ export interface ElementDef {
   /** How each material looks (IfcMaterialDefinitionRepresentation), by name. */
   materialStyles?: Record<string, StyleDef>;
   type?: TypeDef | null;
+  /** STEP values for attributes after Representation the writer has no field for (OverallHeight, OperationType, …). */
+  attributes?: Record<string, string>;
+}
+
+/** A void cut in a host element (IfcOpeningElement), placed in the host's own coordinates, optionally filled by a door or window. */
+export interface OpeningDef {
+  guid: string;
+  name: string;
+  /** Origin and x direction in the host's placement (mm). */
+  origin: Vec3;
+  xDir?: Vec3;
+  /** The void's body (extrusions in the opening's coordinates). */
+  items: Extract<ItemDef, { kind: "extrusion" }>[];
 }
 
 export interface WriterSetup {
@@ -275,6 +289,10 @@ export class IfcFileWriter {
   private readonly products = new Map<string, number>();
   private readonly contained = new Map<string, number[]>();
   private readonly spaces = new Map<string, number[]>();
+  /** Local placement of each product (openings are placed relative to their host). */
+  private readonly placements = new Map<number, number>();
+  /** The file has openings voiding elements: a design transfer file rather than a reference one. */
+  private voids = false;
   private annotationContext = 0;
   private modelContext = 0;
 
@@ -513,6 +531,10 @@ export class IfcFileWriter {
       const p = this.add(`IFCCARTESIANPOINT((${f1(def.profile.x)},${f1(def.profile.y)}))`);
       const position = this.add(`IFCAXIS2PLACEMENT2D(#${p},$)`);
       profile = this.add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,#${position},${f1(def.profile.xDim)},${f1(def.profile.yDim)})`);
+    } else if (def.profile.type === "circle") {
+      const p = this.add(`IFCCARTESIANPOINT((${f1(def.profile.x)},${f1(def.profile.y)}))`);
+      const position = this.add(`IFCAXIS2PLACEMENT2D(#${p},$)`);
+      profile = this.add(`IFCCIRCLEPROFILEDEF(.AREA.,$,#${position},${f1(def.profile.r)})`);
     } else {
       const ids = def.profile.points.map(([x, y]) => this.add(`IFCCARTESIANPOINT((${f1(x)},${f1(y)}))`));
       ids.push(ids[0]);
@@ -574,7 +596,7 @@ export class IfcFileWriter {
         case "CompositionType":
           return ".ELEMENT.";
         default:
-          return "$";
+          return def.attributes?.[attribute] ?? "$";
       }
     });
     const product = this.add(
@@ -599,6 +621,7 @@ export class IfcFileWriter {
     }
 
     if (def.key) this.products.set(def.key, product);
+    this.placements.set(product, placement);
     const bucket = def.cls.name === "IfcSpace" ? this.spaces : this.contained;
     const key = this.storeyIds.has(def.storey) ? def.storey : [...this.storeyIds.keys()][0];
     let list = bucket.get(key);
@@ -667,6 +690,28 @@ export class IfcFileWriter {
     }
     if (sets.length) psets = `(${sets.map((i) => `#${i}`).join(",")})`;
     return this.add(`${def.cls.name.toUpperCase()}(${str(guid)},$,${label(def.name)},${label(def.description)},$,${psets},$,$,${label(def.elementType)}${tail.length ? `,${tail.join(",")}` : ""})`);
+  }
+
+  /**
+   * Cuts an opening into `host` (a product this file wrote): IfcOpeningElement
+   * placed in the host's coordinates, IfcRelVoidsElement, and IfcRelFillsElement
+   * when a door or window (`filler`, written before) fills it.
+   */
+  addOpening(host: number, def: OpeningDef, filler: number | null): number | null {
+    const hostPlacement = this.placements.get(host);
+    if (hostPlacement === undefined || def.items.length === 0) return null;
+    const items = def.items.map((item) => this.item(item));
+    const rep = this.add(`IFCSHAPEREPRESENTATION(#${this.body},'Body','SweptSolid',(${items.map((i) => `#${i}`).join(",")}))`);
+    const shape = this.add(`IFCPRODUCTDEFINITIONSHAPE($,$,(#${rep}))`);
+    const [x, y, z] = def.origin;
+    const point = this.add(`IFCCARTESIANPOINT((${f1(x)},${f1(y)},${f1(z)}))`);
+    const axis = this.add(`IFCAXIS2PLACEMENT3D(#${point},${def.xDir ? `#${this.dirZ},#${this.dir(def.xDir)}` : "$,$"})`);
+    const placement = this.add(`IFCLOCALPLACEMENT(#${hostPlacement},#${axis})`);
+    const opening = this.add(`IFCOPENINGELEMENT(${str(def.guid)},$,${label(def.name)},$,$,#${placement},#${shape},$,.OPENING.)`);
+    this.add(`IFCRELVOIDSELEMENT(${str(hashGuid(`voids|${this.setup.fileKey}|${def.guid}`))},$,$,$,#${host},#${opening})`);
+    if (filler !== null) this.add(`IFCRELFILLSELEMENT(${str(hashGuid(`fills|${this.setup.fileKey}|${def.guid}`))},$,$,$,#${opening},#${filler})`);
+    this.voids = true;
+    return opening;
   }
 
   /** Whether an element with this key is in the file. */
@@ -772,7 +817,7 @@ export class IfcFileWriter {
     const stamp = new Date().toISOString().slice(0, 19);
     const header =
       "ISO-10303-21;\nHEADER;\n" +
-      "FILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');\n" +
+      `FILE_DESCRIPTION(('ViewDefinition [${this.voids ? "DesignTransferView_V1.0" : "ReferenceView_V1.2"}]'),'2;1');\n` +
       `FILE_NAME(${str(s.fileName)},${str(stamp)},(${str(s.author ?? "")}),(${str(s.organization ?? "")}),'IFC Studio Convert','IFC Studio','');\n` +
       "FILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n";
     const footer = "ENDSEC;\nEND-ISO-10303-21;\n";

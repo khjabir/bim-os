@@ -10,6 +10,7 @@ import type { WorkbookSettings } from "./assets/workbook";
 import { workspaceFromRegister } from "./assets/workspace";
 import type { IfcSourceInfo } from "./ifc-source";
 import type { ConvertOptions } from "./types";
+import { announceReady } from "@/lib/utils/worker-ready";
 
 export type WorkerRequest =
   | { id: number; type: "addFiles"; files: { name: string; blob: Blob }[] }
@@ -118,3 +119,5 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
     (error: unknown) => post({ id: request.id, type: "error", message: error instanceof Error ? error.message : String(error) }),
   );
 });
+
+announceReady("convert");

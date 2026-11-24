@@ -1,5 +1,6 @@
 // Plan tracing worker: wall and outline tracing off the main thread.
 
+import { announceReady } from "@/lib/utils/worker-ready";
 import { trace, type TraceOptions } from "./trace";
 
 interface Request {
@@ -19,3 +20,5 @@ self.addEventListener("message", (event: MessageEvent<Request>) => {
     (self as unknown as Worker).postMessage({ id, error: error instanceof Error ? error.message : String(error) });
   }
 });
+
+announceReady("trace");

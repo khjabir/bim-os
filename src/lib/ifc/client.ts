@@ -3,6 +3,7 @@
 // conversion is returned to the browser immediately.
 
 import type { ConvertOptions, ConvertPhase, ConvertStats, IfcWorkerRequest, IfcWorkerResponse } from "./protocol";
+import { readyGate } from "@/lib/utils/worker-ready";
 
 export interface JobProgress {
   phase: ConvertPhase | "extract";
@@ -30,6 +31,7 @@ function runJob<T extends IfcWorkerResponse["type"]>(
       return;
     }
     const worker = new Worker(new URL("./ifc.worker.ts", import.meta.url), { type: "module" });
+    const gate = readyGate(worker, "ifc");
     const finish = () => {
       signal?.removeEventListener("abort", onAbort);
       worker.terminate();
@@ -41,6 +43,7 @@ function runJob<T extends IfcWorkerResponse["type"]>(
     signal?.addEventListener("abort", onAbort);
 
     worker.onmessage = (event: MessageEvent<IfcWorkerResponse>) => {
+      if (gate.handle(event.data)) return;
       const message = event.data;
       if (message.type === "progress") {
         onProgress?.({ phase: message.phase, progress: message.progress, detail: message.detail });
@@ -56,7 +59,7 @@ function runJob<T extends IfcWorkerResponse["type"]>(
       finish();
       reject(new Error(event.message || "The IFC worker crashed (most likely out of memory)."));
     };
-    worker.postMessage(request);
+    gate.post(request);
   });
 }
 

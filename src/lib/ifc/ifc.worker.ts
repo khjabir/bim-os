@@ -11,6 +11,7 @@
 // client, which is what gives the WebAssembly heap back to the browser.
 
 import * as FRAGS from "@thatopen/fragments";
+import { announceReady } from "@/lib/utils/worker-ready";
 import { extendImporter } from "./importer-config";
 import type { ConvertOptions, ConvertPhase, IfcWorkerRequest, IfcWorkerResponse } from "./protocol";
 
@@ -180,3 +181,5 @@ function describeError(error: unknown): string {
   }
   return text || "Unknown error";
 }
+
+announceReady("ifc");

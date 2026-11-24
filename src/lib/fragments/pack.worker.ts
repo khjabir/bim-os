@@ -9,6 +9,7 @@
 // of memory the size of the model.
 
 import { createFragmentsMerger, MergeError, type FragmentsMerger } from "./merge-fragments.mjs";
+import { announceReady } from "@/lib/utils/worker-ready";
 import type { PackRequest, PackResponse } from "./protocol";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -98,3 +99,5 @@ ctx.onmessage = (event: MessageEvent<PackRequest>) => {
     }
   });
 };
+
+announceReady("pack");

@@ -7,8 +7,8 @@ import type { RawSourceJob } from "./bundle";
 import { classify } from "./classify";
 import { disciplineCode, disciplineLabel, suggestDiscipline } from "./disciplines";
 import { ifcClass, ifcTypeClass, type IfcClassInfo } from "./ifc/schema";
-import { hashGuid } from "./ifc/step";
-import { IfcFileWriter, type ElementDef, type ItemDef, type MeshText, type PropEntry, type PsetDef, type StyleDef, type TextureRef, type TypeDef, type Vec3 } from "./ifc/writer";
+import { hashGuid, real } from "./ifc/step";
+import { IfcFileWriter, type ElementDef, type ItemDef, type MeshText, type OpeningDef, type ProfileDef, type PropEntry, type PsetDef, type StyleDef, type TextureRef, type TypeDef, type Vec3 } from "./ifc/writer";
 import { chain, determinant3, multiply, rotationZ, scaling, transformBox, translation, type Affine } from "./math";
 import { meshText, polylines, shellTopology } from "./mesh";
 import { SourceJob, type ElementInfo, type Props } from "./model";
@@ -19,7 +19,7 @@ import { FIELD_BY_ID, isoDuration, parseDuration, parseNumber, parseUnit } from 
 import type { RegisterBoard } from "./assets/electrical";
 import { sldHtml } from "./assets/sld";
 import { detectStoreys, emptyLevelStats, levelIndex, mergeLevelStats, sampleLevel, storeyFor, type LevelStats, type StoreyDef } from "./storeys";
-import type { BBox, ConvertOptions, ConvertReport, JobSummary, OutputFile, PartSummary, PlanPart, ProgressFn } from "./types";
+import { planHasContent, type BBox, type ConvertOptions, type ConvertReport, type JobSummary, type OutputFile, type PartSummary, type PlanOpening, type PlanPart, type ProgressFn } from "./types";
 
 /**
  * Mirrored instances (a placement with a negative determinant) get their own
@@ -659,7 +659,7 @@ export class Converter {
   /** The storeys a conversion with these options uses. */
   private storeysFor(options: ConvertOptions): StoreyDef[] {
     const partIds = options.parts.filter((p) => p.include).map((p) => p.id);
-    return withPlanStoreys(options.storeys.length ? options.storeys : partIds.length ? this.detectStoreys(partIds) : [], options.plans.filter((p) => p.include && (p.walls.length > 0 || p.slab)));
+    return withPlanStoreys(options.storeys.length ? options.storeys : partIds.length ? this.detectStoreys(partIds) : [], options.plans.filter((p) => p.include && planHasContent(p)));
   }
 
   /** Assets, types, spaces, systems and serving relationships of the included parts. */
@@ -767,7 +767,7 @@ export class Converter {
     const started = Date.now();
     this.cancelled = false;
     const included = new Map(options.parts.filter((p) => p.include).map((p) => [p.id, p]));
-    const plans = options.plans.filter((p) => p.include && (p.walls.length > 0 || p.slab));
+    const plans = options.plans.filter((p) => p.include && planHasContent(p));
     const partIds = [...included.keys()];
     const { origin, rotation } = this.resolveFrame(options, partIds);
     // Storey elevations are model heights (metres); plans on a height no storey has add one.
@@ -837,16 +837,26 @@ export class Converter {
       guids.add(g);
       return g;
     };
-    const emit = (discipline: string, def: ElementDef, part: string) => {
+    const emit = (discipline: string, def: ElementDef, part: string, hosted: { opening: OpeningDef; filler: ElementDef | null }[] = []) => {
+      const count = (target: { classes: Record<string, number>; storeys: Record<string, number> }, d: ElementDef) => {
+        target.classes[d.cls.name] = (target.classes[d.cls.name] ?? 0) + 1;
+        const storeyName = storeys.find((s) => s.key === d.storey)?.name ?? d.storey;
+        target.storeys[storeyName] = (target.storeys[storeyName] ?? 0) + 1;
+      };
       for (const target of [writers.get(discipline), federated]) {
         if (!target) continue;
-        target.writer.addElement(def);
+        const host = target.writer.addElement(def);
         target.parts.add(part);
-        target.classes[def.cls.name] = (target.classes[def.cls.name] ?? 0) + 1;
-        const storeyName = storeys.find((s) => s.key === def.storey)?.name ?? def.storey;
-        target.storeys[storeyName] = (target.storeys[storeyName] ?? 0) + 1;
+        count(target, def);
+        if (host === null) continue;
+        // Doors and windows first, then the openings they fill.
+        for (const h of hosted) {
+          const filler = h.filler ? target.writer.addElement(h.filler) : null;
+          if (h.filler && filler !== null) count(target, h.filler);
+          target.writer.addOpening(host, h.opening, filler);
+        }
       }
-      report.elements++;
+      report.elements += 1 + hosted.filter((h) => h.filler).length;
     };
 
     const projectFromMetres = chain(rotationZ(-rotation), translation(-origin[0], -origin[1], -origin[2]));
@@ -854,7 +864,7 @@ export class Converter {
     const storeyFrames = new Map(storeys.map((s) => [s.key, chain(scaling(1000), translation(0, 0, -(s.elevation - origin[2])), projectFromMetres)]));
 
     // Total for progress
-    let total = plans.reduce((n, p) => n + p.walls.length + (p.slab ? 1 : 0), 0);
+    let total = plans.reduce((n, p) => n + p.walls.length + (p.slab ? 1 : 0) + (p.openings?.length ?? 0) + (p.rooms?.length ?? 0) + (p.columns?.length ?? 0), 0);
     for (const id of included.keys()) total += this.parts.get(id)?.summary.elements ?? 0;
     let done = 0;
     const tick = async () => {
@@ -1167,14 +1177,34 @@ export class Converter {
       }
     }
 
-    // Traced plans: walls and slabs as extrusions.
+    // Plans: walls with their openings, doors and windows, rooms, columns and slabs, as extrusions.
     for (const plan of plans) {
       const storey = storeys.reduce((a, b) => (Math.abs(b.elevation - plan.storey.elevation) < Math.abs(a.elevation - plan.storey.elevation) ? b : a));
       const baseZ = (plan.storey.elevation - storey.elevation) * 1000;
       const height = Math.max(0.1, plan.storey.height) * 1000;
       const wallStyle: StyleDef = { hex: "d9d6cf", opacity: 1 };
       const slabStyle: StyleDef = { hex: "b8b8b4", opacity: 1 };
-      const basis = `Traced from ${plan.source}`;
+      const doorStyle: StyleDef = { hex: "a9825a", opacity: 1, name: "Door" };
+      const frameStyle: StyleDef = { hex: "8d949b", opacity: 1, name: "Frame" };
+      const glassStyle: StyleDef = { hex: "a8c8e8", opacity: 0.35, name: "Glass", method: "GLASS" };
+      const spaceStyle: StyleDef = { hex: "8ec5ff", opacity: 0.25, name: "Space" };
+      const columnStyle: StyleDef = { hex: "c8c4bc", opacity: 1, name: "Column" };
+      const read = plan.basis === "read";
+      const basis = `${read ? "Read" : "Traced"} from ${plan.source}`;
+      const provenance = { name: "IFCStudio_Provenance", props: [{ name: "Basis", value: basis }, { name: "Converted", value: sourceDate }] };
+      const box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, style: StyleDef): Extract<ItemDef, { kind: "extrusion" }> => ({
+        kind: "extrusion",
+        profile: { type: "rectangle", x: (x0 + x1) / 2, y: (y0 + y1) / 2, xDim: Math.max(1, x1 - x0), yDim: Math.max(1, y1 - y0) },
+        origin: [0, 0, z0],
+        depth: Math.max(1, z1 - z0),
+        style,
+      });
+      const openingsByWall = new Map<number, PlanOpening[]>();
+      for (const o of plan.openings ?? []) {
+        let list = openingsByWall.get(o.wall);
+        if (!list) openingsByWall.set(o.wall, (list = []));
+        list.push(o);
+      }
       plan.walls.forEach((wall, i) => {
         const ax = wall.a[0] * 1000,
           ay = wall.a[1] * 1000,
@@ -1183,7 +1213,82 @@ export class Converter {
         const length = Math.hypot(bx - ax, by - ay);
         const t = wall.thickness * 1000;
         if (length < 10 || t <= 0) return;
+        const ux = (bx - ax) / length,
+          uy = (by - ay) / length;
         const guid = uniqueGuid(null, `plan|${plan.id}|wall|${i}|${ax.toFixed(0)},${ay.toFixed(0)},${bx.toFixed(0)},${by.toFixed(0)}`);
+        const hosted: { opening: OpeningDef; filler: ElementDef | null }[] = [];
+        (openingsByWall.get(i) ?? []).forEach((o, k) => {
+          const w = o.width * 1000;
+          const s0 = Math.max(0, Math.min(length - 1, o.offset * 1000));
+          const width = Math.min(w, length - s0);
+          if (width < 50) return;
+          const sill = Math.max(0, o.sill * 1000);
+          const h = Math.max(100, Math.min(o.height * 1000, height - sill));
+          const key = `plan|${plan.id}|wall|${i}|opening|${k}|${s0.toFixed(0)}`;
+          const opening: OpeningDef = {
+            guid: uniqueGuid(null, key),
+            name: o.kind === "door" ? "Door opening" : o.kind === "window" ? "Window opening" : "Opening",
+            origin: [s0, 0, sill],
+            items: [box(0, width, -t / 2 - 20, t / 2 + 20, 0, h, wallStyle)],
+          };
+          let filler: ElementDef | null = null;
+          if (o.kind === "door" || o.kind === "window") {
+            // The leaf opens to +y of the door's placement (IFC); its x then runs along or against the wall.
+            const sideX = o.kind === "door" && o.swingSide !== 0 ? o.swingSide : 1;
+            const dir: Vec3 = [ux * sideX, uy * sideX, 0];
+            const startS = sideX > 0 ? s0 : s0 + width;
+            const origin: Vec3 = [ax + ux * startS, ay + uy * startS, baseZ + sill];
+            const f = 50;
+            const depth = Math.min(t, o.kind === "door" ? 120 : 100);
+            const items: ItemDef[] =
+              o.kind === "door"
+                ? [
+                    box(0, f, -depth / 2, depth / 2, 0, h, frameStyle),
+                    box(width - f, width, -depth / 2, depth / 2, 0, h, frameStyle),
+                    box(0, width, -depth / 2, depth / 2, h - f, h, frameStyle),
+                    ...(o.operation?.startsWith("DOUBLE")
+                      ? [box(f, width / 2 - 3, -20, 20, 0, h - f, doorStyle), box(width / 2 + 3, width - f, -20, 20, 0, h - f, doorStyle)]
+                      : [box(f, width - f, -20, 20, 0, h - f, doorStyle)]),
+                  ]
+                : [
+                    box(0, f, -depth / 2, depth / 2, 0, h, frameStyle),
+                    box(width - f, width, -depth / 2, depth / 2, 0, h, frameStyle),
+                    box(f, width - f, -depth / 2, depth / 2, 0, f, frameStyle),
+                    box(f, width - f, -depth / 2, depth / 2, h - f, h, frameStyle),
+                    box(f, width - f, -6, 6, f, h - f, glassStyle),
+                  ];
+            const isDoor = o.kind === "door";
+            filler = {
+              guid: uniqueGuid(null, `${key}|${o.kind}`),
+              cls: ifcClass(isDoor ? "IfcDoor" : "IfcWindow")!,
+              predefined: isDoor ? "DOOR" : "WINDOW",
+              name: o.name || `${isDoor ? "Door" : "Window"} ${Math.round(width)} × ${Math.round(h)} mm`,
+              description: `${isDoor ? "Door" : "Window"} ${read ? "read" : "traced"} from a floor plan`,
+              objectType: o.name,
+              tag: null,
+              storey: storey.key,
+              placement: { origin, xDir: dir },
+              representation: "SweptSolid",
+              items,
+              attributes: {
+                OverallHeight: real(Math.round(h * 10) / 10),
+                OverallWidth: real(Math.round(width * 10) / 10),
+                ...(isDoor ? { OperationType: `.${o.operation && /^[A-Z_]+$/.test(o.operation) ? o.operation : "NOTDEFINED"}.` } : { PartitioningType: ".SINGLE_PANEL." }),
+              },
+              psets: [{ name: isDoor ? "Pset_DoorCommon" : "Pset_WindowCommon", props: [{ name: "IsExternal", value: Boolean(wall.external), kind: "boolean" }] }, provenance],
+              quantities: {
+                name: isDoor ? "Qto_DoorBaseQuantities" : "Qto_WindowBaseQuantities",
+                items: [
+                  { kind: "length", name: "Height", value: h },
+                  { kind: "length", name: "Width", value: width },
+                  { kind: "area", name: "Area", value: (h * width) / 1e6 },
+                ],
+              },
+              materials: null,
+            };
+          }
+          hosted.push({ opening, filler });
+        });
         emit(
           plan.discipline || "plans",
           {
@@ -1191,21 +1296,18 @@ export class Converter {
             cls: ifcClass("IfcWall")!,
             predefined: wall.external ? "STANDARD" : "PARTITIONING",
             name: `Wall ${Math.round(t)} mm`,
-            description: "Wall traced from a floor plan",
+            description: `Wall ${read ? "read" : "traced"} from a floor plan`,
             objectType: null,
             tag: null,
             storey: storey.key,
-            placement: { origin: [ax, ay, baseZ], xDir: [(bx - ax) / length, (by - ay) / length, 0] },
+            placement: { origin: [ax, ay, baseZ], xDir: [ux, uy, 0] },
             representation: "SweptSolid",
             items: [{ kind: "extrusion", profile: { type: "rectangle", x: length / 2, y: 0, xDim: length, yDim: t }, origin: [0, 0, 0], depth: height, style: wallStyle }],
             axis: [
               [0, 0],
               [length, 0],
             ],
-            psets: [
-              { name: "Pset_WallCommon", props: [{ name: "IsExternal", value: Boolean(wall.external), kind: "boolean" }] },
-              { name: "IFCStudio_Provenance", props: [{ name: "Basis", value: basis }, { name: "Converted", value: sourceDate }] },
-            ],
+            psets: [{ name: "Pset_WallCommon", props: [{ name: "IsExternal", value: Boolean(wall.external), kind: "boolean" }] }, provenance],
             quantities: {
               name: "Qto_WallBaseQuantities",
               items: [
@@ -1220,9 +1322,100 @@ export class Converter {
             materials: null,
           },
           plan.id,
+          hosted,
         );
       });
-      done += plan.walls.length;
+      done += plan.walls.length + (plan.openings?.length ?? 0);
+      // Rooms.
+      (plan.rooms ?? []).forEach((room, i) => {
+        const pts = room.outline.map(([x, y]) => [x * 1000, y * 1000] as [number, number]);
+        if (pts.length < 3) return;
+        let area = 0;
+        let perimeter = 0;
+        for (let k = 0; k < pts.length; k++) {
+          const [x0, y0] = pts[k];
+          const [x1, y1] = pts[(k + 1) % pts.length];
+          area += x0 * y1 - x1 * y0;
+          perimeter += Math.hypot(x1 - x0, y1 - y0);
+        }
+        if (area < 0) pts.reverse();
+        area = Math.abs(area) / 2;
+        if (area < 1e5) return; // under 0.1 m²
+        const name = room.number || room.name || `Room ${i + 1}`;
+        emit(
+          plan.discipline || "plans",
+          {
+            guid: uniqueGuid(null, `plan|${plan.id}|room|${i}|${pts[0][0].toFixed(0)},${pts[0][1].toFixed(0)}`),
+            cls: ifcClass("IfcSpace")!,
+            predefined: "INTERNAL",
+            name,
+            longName: room.name && room.number ? room.name : null,
+            description: `Room ${read ? "read" : "traced"} from a floor plan`,
+            objectType: null,
+            tag: null,
+            storey: storey.key,
+            representation: "SweptSolid",
+            items: [{ kind: "extrusion", profile: { type: "polygon", points: pts }, origin: [0, 0, baseZ], depth: height, style: spaceStyle }],
+            psets: [{ name: "Pset_SpaceCommon", props: [{ name: "Reference", value: room.number ?? "", kind: "identifier" }, { name: "IsExternal", value: false, kind: "boolean" }] }, provenance],
+            quantities: {
+              name: "Qto_SpaceBaseQuantities",
+              items: [
+                { kind: "length", name: "Height", value: height },
+                { kind: "length", name: "NetPerimeter", value: perimeter },
+                { kind: "area", name: "NetFloorArea", value: area / 1e6 },
+                { kind: "area", name: "GrossFloorArea", value: area / 1e6 },
+                { kind: "volume", name: "NetVolume", value: (area * height) / 1e9 },
+              ],
+            },
+            materials: null,
+          },
+          plan.id,
+        );
+      });
+      // Columns.
+      (plan.columns ?? []).forEach((col, i) => {
+        let profile: ProfileDef | null = null;
+        let section = 0;
+        if (col.circle) {
+          profile = { type: "circle", x: col.circle.c[0] * 1000, y: col.circle.c[1] * 1000, r: col.circle.r * 1000 };
+          section = Math.PI * (col.circle.r * 1000) ** 2;
+        } else if (col.outline && col.outline.length >= 3) {
+          const pts = col.outline.map(([x, y]) => [x * 1000, y * 1000] as [number, number]);
+          let a = 0;
+          for (let k = 0; k < pts.length; k++) a += pts[k][0] * pts[(k + 1) % pts.length][1] - pts[(k + 1) % pts.length][0] * pts[k][1];
+          if (a < 0) pts.reverse();
+          section = Math.abs(a) / 2;
+          profile = { type: "polygon", points: pts };
+        }
+        if (!profile || section < 100) return;
+        emit(
+          plan.discipline || "plans",
+          {
+            guid: uniqueGuid(null, `plan|${plan.id}|column|${i}`),
+            cls: ifcClass("IfcColumn")!,
+            predefined: "COLUMN",
+            name: col.circle ? `Column Ø${Math.round(col.circle.r * 2000)} mm` : `Column ${Math.round(Math.sqrt(section))} mm`,
+            description: `Column ${read ? "read" : "traced"} from a floor plan`,
+            objectType: null,
+            tag: null,
+            storey: storey.key,
+            representation: "SweptSolid",
+            items: [{ kind: "extrusion", profile, origin: [0, 0, baseZ], depth: height, style: columnStyle }],
+            psets: [{ name: "Pset_ColumnCommon", props: [{ name: "IsExternal", value: false, kind: "boolean" }, { name: "LoadBearing", value: true, kind: "boolean" }] }, provenance],
+            quantities: {
+              name: "Qto_ColumnBaseQuantities",
+              items: [
+                { kind: "length", name: "Length", value: height },
+                { kind: "area", name: "CrossSectionArea", value: section / 1e6 },
+                { kind: "volume", name: "GrossVolume", value: (section * height) / 1e9 },
+              ],
+            },
+            materials: null,
+          },
+          plan.id,
+        );
+      });
+      done += (plan.rooms?.length ?? 0) + (plan.columns?.length ?? 0);
       if (plan.slab && plan.slab.outline.length >= 3) {
         const pts = plan.slab.outline.map(([x, y]) => [x * 1000, y * 1000] as [number, number]);
         let area = 0;
@@ -1243,16 +1436,13 @@ export class Converter {
             cls: ifcClass("IfcSlab")!,
             predefined: "FLOOR",
             name: `Floor slab ${Math.round(t)} mm`,
-            description: "Slab outline traced from a floor plan",
+            description: `Slab outline ${read ? "read" : "traced"} from a floor plan`,
             objectType: null,
             tag: null,
             storey: storey.key,
             representation: "SweptSolid",
             items: [{ kind: "extrusion", profile: { type: "polygon", points: pts }, origin: [0, 0, baseZ - t], depth: t, style: slabStyle }],
-            psets: [
-              { name: "Pset_SlabCommon", props: [{ name: "IsExternal", value: false, kind: "boolean" }] },
-              { name: "IFCStudio_Provenance", props: [{ name: "Basis", value: basis }, { name: "Converted", value: sourceDate }] },
-            ],
+            psets: [{ name: "Pset_SlabCommon", props: [{ name: "IsExternal", value: false, kind: "boolean" }] }, provenance],
             quantities: {
               name: "Qto_SlabBaseQuantities",
               items: [

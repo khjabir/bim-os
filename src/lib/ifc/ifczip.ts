@@ -7,6 +7,7 @@
 // stored without compression is not copied at all: it is a slice of the archive.
 
 import { JobCancelled } from "./client";
+import { readyGate } from "@/lib/utils/worker-ready";
 import type { InflateRequest, InflateResponse } from "./protocol";
 import {
   describeMissingModel,
@@ -79,6 +80,7 @@ function inflate(request: InflateRequest, onProgress?: (bytes: number) => void, 
       return;
     }
     const worker = new Worker(new URL("./unzip.worker.ts", import.meta.url), { type: "module" });
+    const gate = readyGate(worker, "unzip");
     const finish = () => {
       signal?.removeEventListener("abort", onAbort);
       worker.terminate();
@@ -90,6 +92,7 @@ function inflate(request: InflateRequest, onProgress?: (bytes: number) => void, 
     signal?.addEventListener("abort", onAbort);
 
     worker.onmessage = (event: MessageEvent<InflateResponse>) => {
+      if (gate.handle(event.data)) return;
       const message = event.data;
       if (message.type === "progress") {
         onProgress?.(message.bytes);
@@ -105,6 +108,6 @@ function inflate(request: InflateRequest, onProgress?: (bytes: number) => void, 
       finish();
       reject(new Error(event.message || "Unpacking stopped unexpectedly (most likely out of memory)."));
     };
-    worker.postMessage(request);
+    gate.post(request);
   });
 }

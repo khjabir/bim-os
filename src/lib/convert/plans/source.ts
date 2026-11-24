@@ -1,6 +1,10 @@
 // Floor-plan sources: images and PDF pages, turned into a picture to show
 // and a grayscale raster to trace. PDFs are rendered with pdf.js, at a
-// resolution that keeps thin walls several pixels thick.
+// resolution that keeps thin walls several pixels thick; pages drawn as line
+// work (exported from CAD) also give their paths as a vector drawing, read
+// exactly instead of traced. DXF files are read by the vector plan worker.
+
+import type { PdfVector } from "./pdfvector";
 
 export interface PlanRaster {
   /** "<file>" or "<file> · page 3" */
@@ -17,6 +21,8 @@ export interface PlanRaster {
   lightPaper: boolean;
   /** PDF pages: metres per pixel at 1:1 (multiply by the drawing scale, e.g. 100 for 1:100). */
   metresPerPixelAtFullSize: number | null;
+  /** PDF pages drawn as line work: the paths, and pixels per PDF point of the rendering. */
+  vector?: { pdf: PdfVector; pxPerPoint: number; scale: number | null; scaleSource: "sheet" | "doors" | null } | null;
 }
 
 /** Longest side of a rendered PDF page, pixels. */
@@ -24,10 +30,15 @@ const PDF_TARGET = 3600;
 /** Images larger than this are scaled down for tracing. */
 const IMAGE_MAX = 5000;
 
-export const PLAN_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff";
+export const PLAN_ACCEPT = ".dxf,.dwg,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff";
 
 export function isPlanFile(name: string) {
-  return /\.(pdf|png|jpe?g|webp|gif|bmp|tiff?)$/i.test(name);
+  return /\.(dxf|dwg|pdf|png|jpe?g|webp|gif|bmp|tiff?)$/i.test(name);
+}
+
+/** A page is read as line work when it is mostly paths, not a scanned picture. */
+export function isVectorPage(v: PdfVector) {
+  return v.segments >= 150 && v.imageShare < 0.6;
 }
 
 function rasterFromCanvas(canvas: HTMLCanvasElement | OffscreenCanvas): { gray: Uint8Array; lightPaper: boolean } {
@@ -93,6 +104,8 @@ async function loadPdf(file: File, pages: number[]): Promise<PlanRaster[]> {
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const doc = await task.promise;
   const out: PlanRaster[] = [];
+  const [{ pdfPageVector, pdfLayers }, { guessPdfScale }] = await Promise.all([import("./pdfvector"), import("./recognize")]);
+  const layers = await pdfLayers(doc);
   try {
     for (const n of pages) {
       if (n < 1 || n > doc.numPages) continue;
@@ -108,6 +121,17 @@ async function loadPdf(file: File, pages: number[]): Promise<PlanRaster[]> {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvas, viewport, background: "rgb(255,255,255)" }).promise;
       const { gray, lightPaper } = rasterFromCanvas(canvas);
+      let vector: PlanRaster["vector"] = null;
+      try {
+        const pdf = await pdfPageVector(pdfjs, page, layers);
+        if (isVectorPage(pdf)) {
+          const doors = guessPdfScale(pdf.drawing);
+          const scale = pdf.scaleText ?? doors;
+          vector = { pdf, pxPerPoint: canvas.width / pdf.width, scale, scaleSource: pdf.scaleText ? "sheet" : doors ? "doors" : null };
+        }
+      } catch {
+        vector = null;
+      }
       out.push({
         label: doc.numPages > 1 ? `${file.name} · page ${n}` : file.name,
         fileName: file.name,
@@ -119,6 +143,7 @@ async function loadPdf(file: File, pages: number[]): Promise<PlanRaster[]> {
         lightPaper,
         // One PDF unit is 1/72 inch on paper.
         metresPerPixelAtFullSize: 0.0254 / 72 / scale,
+        vector,
       });
       page.cleanup();
     }

@@ -10,6 +10,7 @@
 // converted here.
 
 import { summariseFragments } from "@/lib/fragments/merge-fragments.mjs";
+import { announceReady } from "@/lib/utils/worker-ready";
 import { createIfcScanner } from "./ifc-scan.mjs";
 import type { ModelScan, ScanJob, ScanResponse } from "./protocol";
 
@@ -65,3 +66,5 @@ ctx.onmessage = async (event: MessageEvent<ScanJob[]>) => {
   }
   post({ type: "done" });
 };
+
+announceReady("scan");

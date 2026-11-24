@@ -24,7 +24,7 @@ export function GenerateCard() {
   const sources = useConvertStore((s) => s.sources);
   const passThrough = sources.filter((s) => s.ifc?.include);
   const includedParts = parts.filter((p) => partConfig[p.id]?.include !== false);
-  const readyPlans = plans.filter((p) => p.include && p.calibration && p.calibration.metresPerPixel > 0 && (p.walls.length || (p.withSlab && p.outline.length >= 3)));
+  const readyPlans = plans.filter((p) => p.include && p.calibration && p.calibration.metresPerPixel > 0 && (p.walls.length || (p.withSlab && p.outline.length >= 3) || p.rooms.length || p.columns.length));
   const disciplines = new Set([...includedParts.map((p) => partConfig[p.id]?.discipline ?? p.suggestion.id), ...readyPlans.map((p) => p.discipline)]);
   const elements = includedParts.reduce((n, p) => n + p.elements, 0);
   const running = generation?.running ?? false;
@@ -32,6 +32,20 @@ export function GenerateCard() {
   const hasFederated = outputs.some((o) => o.discipline === null);
   const withTextures = outputs.some((o) => o.assets?.length);
   const [zipping, setZipping] = useState<string | null>(null);
+
+  /** The IFC as That Open Fragments (.frag), converted in a worker. */
+  const toFrag = async (name: string, blob: Blob) => {
+    setZipping(`frag|${name}`);
+    try {
+      const { convertIfc } = await import("@/lib/ifc/client");
+      const { bytes } = await convertIfc(blob);
+      downloadBlob(new Blob([bytes as BlobPart], { type: "application/octet-stream" }), name.replace(/\.ifc$/i, "") + ".frag");
+    } catch (error) {
+      pushToast("error", `Could not convert ${name} to Fragments: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setZipping(null);
+    }
+  };
 
   const zip = async (key: string, make: () => Promise<Blob>, name: string) => {
     setZipping(key);
@@ -182,6 +196,9 @@ export function GenerateCard() {
                 </Button>
                 <Button size="sm" icon={<Download size={12} />} onClick={() => downloadBlob(o.blob, o.name)} title={o.assets?.length ? "The IFC file alone" : undefined}>
                   Download
+                </Button>
+                <Button size="sm" icon={<Download size={12} />} busy={zipping === `frag|${o.name}`} onClick={() => void toFrag(o.name, o.blob)} title="The same model as That Open Fragments (.frag): opens in seconds in Fragments viewers">
+                  .frag
                 </Button>
                 {o.assets?.length ? (
                   <Button

@@ -16,11 +16,15 @@ import { DEFAULT_ASSET_CATEGORIES, DEFAULT_CODE_PATTERN } from "./assets/categor
 import type { AssetOptions } from "./assets/register";
 import { classifySourceName } from "./bundle";
 import { convertWorker, type WorkerState } from "./client";
-import { pxToProject } from "./plans/calibrate";
+import { pxToProject, type PlanCalibration } from "./plans/calibrate";
 import { traceInWorker } from "./plans/client";
+import { attachOpenings } from "./plans/part";
+import { DEFAULT_RECOGNIZE, type LayerRole } from "./plans/recognize";
 import { isPlanFile, loadPlanFile } from "./plans/source";
 import { DEFAULT_TRACE } from "./plans/trace";
-import { updateLink, updatePlan, updateSource, useConvertStore, type PlanItem, type SourceItem, type SourceKind, type SourceMethod } from "./store";
+import { paperColor, planView, toPx, type LayerPaths } from "./plans/vector";
+import { vectorPlans } from "./plans/vectorClient";
+import { DEFAULT_SIZES, updateLink, updatePlan, updateSource, useConvertStore, type PlanItem, type PlanVector, type SourceItem, type SourceKind, type SourceMethod } from "./store";
 import type { ConvertOptions, OutputFile, PlanPart } from "./types";
 
 const controllers = new Map<string, AbortController>();
@@ -165,11 +169,18 @@ export async function removeSource(id: string) {
   const source = useConvertStore.getState().sources.find((s) => s.id === id);
   if (!source) return;
   if (source.jobs?.length) applyWorkerState(await convertWorker.remove(source.jobs));
+  const drawings = new Set(
+    useConvertStore
+      .getState()
+      .plans.filter((p) => p.sourceId === id && p.vector)
+      .map((p) => p.vector!.drawingId),
+  );
+  for (const d of drawings) void vectorPlans.release(d).catch(() => undefined);
   useConvertStore.setState((s) => ({
     sources: s.sources.filter((x) => x.id !== id),
     plans: s.plans.filter((p) => {
       if (p.sourceId !== id) return true;
-      URL.revokeObjectURL(p.imageUrl);
+      if (p.imageUrl) URL.revokeObjectURL(p.imageUrl);
       return false;
     }),
   }));
@@ -383,44 +394,271 @@ export function openViewerLink(url: string): boolean {
 // ---------------------------------------------------------------------------
 // Plans
 
+type PlanBase = Pick<PlanItem, "sourceId" | "label" | "fileName" | "page" | "width" | "height" | "imageUrl" | "gray" | "lightPaper" | "metresPerPixelAtFullSize"> & Partial<PlanItem>;
+
+function newPlan(base: PlanBase, index: number): PlanItem {
+  return {
+    id: uid("plan"),
+    drawingScale: null,
+    calibration: null,
+    trace: { mode: "filled", darkWalls: base.lightPaper, threshold: null, minThickness: 0.08, maxThickness: 0.6, defaultThickness: 0.2, minLength: 0.5, doorGap: 1.2, orthogonal: true, region: null },
+    walls: [],
+    outline: [],
+    traced: false,
+    tracing: false,
+    storey: { name: `Level ${index}`, elevation: Math.round(index * 3.5 * 100) / 100, height: 3 },
+    slabThickness: 0.2,
+    withSlab: true,
+    include: true,
+    discipline: "plans",
+    openings: [],
+    rooms: [],
+    columns: [],
+    sizes: { ...DEFAULT_SIZES },
+    vector: null,
+    ...base,
+  };
+}
+
+const VECTOR_SETTINGS = {
+  minThickness: DEFAULT_RECOGNIZE.minThickness,
+  maxThickness: DEFAULT_RECOGNIZE.maxThickness,
+  singleLines: DEFAULT_RECOGNIZE.singleLines,
+  defaultThickness: DEFAULT_RECOGNIZE.defaultThickness,
+  rooms: DEFAULT_RECOGNIZE.rooms,
+};
+
+export const DWG_MESSAGE = "DWG files can't be read in the browser yet. In AutoCAD (or any DWG viewer) use Save As → DXF, any version, or export a PDF, and add that instead.";
+
 async function addPlanSource(sourceId: string, file: File) {
+  if (/\.dwg$/i.test(file.name)) {
+    updateSource(sourceId, { status: "failed", step: undefined, error: DWG_MESSAGE });
+    return;
+  }
+  if (/\.dxf$/i.test(file.name)) return addDxfSource(sourceId, file);
   updateSource(sourceId, { status: "working", step: /\.pdf$/i.test(file.name) ? "Rendering the PDF" : "Reading the image" });
   try {
     const rasters = await loadPlanFile(file);
     const existing = useConvertStore.getState().plans;
-    const plans: PlanItem[] = rasters.map((r, i) => {
-      const index = existing.length + i;
-      return {
-        id: uid("plan"),
-        sourceId,
-        label: r.label,
-        fileName: r.fileName,
-        page: r.page,
-        width: r.width,
-        height: r.height,
-        imageUrl: r.imageUrl,
-        gray: r.gray,
-        lightPaper: r.lightPaper,
-        metresPerPixelAtFullSize: r.metresPerPixelAtFullSize,
-        drawingScale: null,
-        calibration: null,
-        trace: { mode: "filled", darkWalls: r.lightPaper, threshold: null, minThickness: 0.08, maxThickness: 0.6, defaultThickness: 0.2, minLength: 0.5, doorGap: 1.2, orthogonal: true, region: null },
-        walls: [],
-        outline: [],
-        traced: false,
-        tracing: false,
-        storey: { name: `Level ${index}`, elevation: Math.round(index * 3.5 * 100) / 100, height: 3 },
-        slabThickness: 0.2,
-        withSlab: true,
-        include: true,
-        discipline: "plans",
-      };
-    });
+    const plans: PlanItem[] = [];
+    for (const [i, r] of rasters.entries()) {
+      const plan = newPlan(
+        {
+          sourceId,
+          label: r.label,
+          fileName: r.fileName,
+          page: r.page,
+          width: r.width,
+          height: r.height,
+          imageUrl: r.imageUrl,
+          gray: r.gray,
+          lightPaper: r.lightPaper,
+          metresPerPixelAtFullSize: r.metresPerPixelAtFullSize,
+        },
+        existing.length + i,
+      );
+      if (r.vector) {
+        // A PDF drawn as line work: read its paths.
+        const pdf = r.vector.pdf;
+        const drawingId = `${sourceId}#${r.page ?? 1}`;
+        try {
+          const info = await vectorPlans.open(drawingId, pdf.drawing);
+          plan.vector = {
+            drawingId,
+            kind: "pdf",
+            region: [0, 0, pdf.width, pdf.height],
+            view: { x0: 0, y1: pdf.height, k: r.vector.pxPerPoint, width: r.width, height: r.height },
+            scaleSource: r.vector.scaleSource,
+            unitLabel: "PDF points",
+            layers: info.layers.map((l, k) => ({ name: l.name, color: l.color, role: info.roles[k], auto: info.roles[k], count: l.count })),
+            paths: null,
+            texts: null,
+            settings: { ...VECTOR_SETTINGS },
+            recognizing: false,
+            recognized: false,
+            warnings: [],
+            notes: pdf.ocLayers ? [] : ["This PDF has no layers: its lines are grouped by pen (colour and width)."],
+            autoOrigin: true,
+          };
+          if (r.vector.scale && r.metresPerPixelAtFullSize) {
+            plan.drawingScale = r.vector.scale;
+            plan.calibration = { metresPerPixel: r.metresPerPixelAtFullSize * r.vector.scale, originPx: [0, r.height], origin: [0, 0], rotationDeg: 0 };
+          }
+        } catch {
+          plan.vector = null;
+        }
+      }
+      plans.push(plan);
+    }
     useConvertStore.setState((s) => ({ plans: [...s.plans, ...plans] }));
     updateSource(sourceId, { status: "ready", step: undefined, progress: undefined });
+    for (const plan of plans) if (plan.vector && plan.calibration) void recognizePlan(plan.id);
     if (plans.length === 1) useConvertStore.setState({ editingPlan: plans[0].id });
   } catch (error) {
     updateSource(sourceId, { status: "failed", step: undefined, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/** A DXF file: each separate plan in its model space becomes a plan (a storey). */
+async function addDxfSource(sourceId: string, file: File) {
+  updateSource(sourceId, { status: "working", step: "Reading the drawing" });
+  try {
+    const info = await vectorPlans.openDxf(sourceId, await file.arrayBuffer());
+    const unitScale = info.unitScale ?? info.unitGuess?.scale ?? null;
+    const scaleSource: PlanVector["scaleSource"] = info.unitScale ? "file" : (info.unitGuess?.basis ?? null);
+    const unitLabel = info.unitScale ? info.unitLabel : (info.unitGuess?.label ?? "unitless");
+    const regions = info.regions.slice(0, 12);
+    const existing = useConvertStore.getState().plans.length;
+    const plans = regions.map((region, i) => {
+      const view = planView(region, 4000);
+      // Keep the drawing's own coordinates when it is a single plan drawn near its origin.
+      const span = Math.max(region[2] - region[0], region[3] - region[1]);
+      const nearOrigin = regions.length === 1 && 0 >= region[0] - span && 0 <= region[2] + span && 0 >= region[1] - span && 0 <= region[3] + span;
+      const originPx = nearOrigin ? toPx(view, 0, 0) : toPx(view, region[0], region[1]);
+      const calibration: PlanCalibration | null = unitScale ? { metresPerPixel: unitScale / view.k, originPx, origin: [0, 0], rotationDeg: 0 } : null;
+      return newPlan(
+        {
+          sourceId,
+          label: regions.length > 1 ? `${file.name} · plan ${i + 1}` : file.name,
+          fileName: file.name,
+          page: regions.length > 1 ? i + 1 : null,
+          width: view.width,
+          height: view.height,
+          imageUrl: "",
+          gray: new Uint8Array(0),
+          lightPaper: true,
+          metresPerPixelAtFullSize: null,
+          calibration,
+          discipline: "architecture",
+          vector: {
+            drawingId: sourceId,
+            kind: "dxf",
+            region,
+            view,
+            scaleSource,
+            unitLabel,
+            layers: info.layers.map((l, k) => ({ name: l.name, color: l.color, role: info.roles[k], auto: info.roles[k], count: l.count })),
+            paths: null,
+            texts: null,
+            settings: { ...VECTOR_SETTINGS },
+            recognizing: false,
+            recognized: false,
+            warnings: [],
+            notes: info.notes,
+            autoOrigin: !nearOrigin,
+          },
+        },
+        existing + i,
+      );
+    });
+    useConvertStore.setState((s) => ({ plans: [...s.plans, ...plans] }));
+    const note = `DXF ${info.version}${info.binary ? " (binary)" : ""} · ${unitScale ? unitLabel : "units unknown"}${regions.length > 1 ? ` · ${regions.length} plans` : ""}`;
+    updateSource(sourceId, { status: "ready", step: undefined, progress: undefined, note });
+    if (!useConvertStore.getState().sources.some((x) => x.kind === "rvt" || x.kind === "nwd" || x.kind === "extract")) nameProjectFrom(file.name);
+    for (const plan of plans) {
+      void loadPlanPaths(plan.id);
+      if (plan.calibration) void recognizePlan(plan.id);
+    }
+    if (plans.length === 1) useConvertStore.setState({ editingPlan: plans[0].id });
+  } catch (error) {
+    updateSource(sourceId, { status: "failed", step: undefined, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/** Line work of a DXF plan for the editor, and a small picture of it for the plans list. */
+async function loadPlanPaths(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  if (!plan?.vector || plan.vector.kind !== "dxf") return;
+  const v = plan.vector;
+  try {
+    const { paths, texts } = await vectorPlans.paths(v.drawingId, v.region, v.view);
+    const imageUrl = plan.imageUrl || thumbnail(paths, v, plan.width, plan.height);
+    updatePlan(id, (p) => ({ imageUrl, vector: p.vector ? { ...p.vector, paths, texts } : p.vector }));
+  } catch (error) {
+    updatePlan(id, (p) => ({ vector: p.vector ? { ...p.vector, error: error instanceof Error ? error.message : String(error) } : p.vector }));
+  }
+}
+
+function thumbnail(paths: LayerPaths[], v: PlanVector, width: number, height: number): string {
+  const shown = new Set<LayerRole>(["wall", "door", "window", "column", "room", "other"]);
+  const stroke = Math.max(width, height) / 400;
+  const parts = paths
+    .filter((p) => shown.has(v.layers[p.layer]?.role ?? "other"))
+    .map((p) => {
+      const color = paperColor(v.layers[p.layer]?.color ?? "#000000");
+      return `${p.fill ? `<path d="${p.fill}" fill="${color}" fill-opacity="0.35"/>` : ""}${p.d ? `<path d="${p.d}" fill="none" stroke="${color}" stroke-width="${stroke}"/>` : ""}`;
+    });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#fff"/>${parts.join("")}</svg>`;
+  return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+}
+
+/** Reads walls, doors, windows, rooms and columns from a plan's line work (replaces them, edits included). */
+export async function recognizePlan(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  if (!plan?.vector) return;
+  const cal = plan.calibration;
+  if (!cal || !(cal.metresPerPixel > 0)) {
+    updatePlan(id, (p) => ({ vector: p.vector ? { ...p.vector, error: "Set the scale first." } : p.vector }));
+    return;
+  }
+  const v = plan.vector;
+  updatePlan(id, (p) => ({ vector: p.vector ? { ...p.vector, recognizing: true, error: undefined } : p.vector }));
+  try {
+    const r = await vectorPlans.recognize(
+      v.drawingId,
+      v.region,
+      v.view,
+      v.layers.map((l) => l.role),
+      cal.metresPerPixel * v.view.k,
+      v.settings,
+    );
+    updatePlan(id, (p) => {
+      const patch: Partial<PlanItem> = {
+        walls: r.walls,
+        outline: r.outline,
+        openings: r.openings,
+        rooms: r.rooms,
+        columns: r.columns,
+        traced: true,
+        vector: p.vector ? { ...p.vector, recognizing: false, recognized: true, warnings: r.warnings } : p.vector,
+      };
+      // Until the user picks an origin, it sits at the floor's lower-left corner (floors of one drawing then stack).
+      if (p.vector?.autoOrigin && p.calibration && r.outline.length) {
+        const xs = r.outline.map((q) => q[0]),
+          ys = r.outline.map((q) => q[1]);
+        patch.calibration = { ...p.calibration, originPx: [Math.min(...xs), Math.max(...ys)] };
+      }
+      return patch;
+    });
+  } catch (error) {
+    updatePlan(id, (p) => ({ vector: p.vector ? { ...p.vector, recognizing: false, error: error instanceof Error ? error.message : String(error) } : p.vector }));
+  }
+}
+
+/** Changes a layer's role on every plan from the same drawing, and reads them again. */
+export function setLayerRole(id: string, layer: number, role: LayerRole) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  if (!plan?.vector) return;
+  const drawingId = plan.vector.drawingId;
+  const affected = useConvertStore.getState().plans.filter((p) => p.vector?.drawingId === drawingId);
+  for (const p of affected) updatePlan(p.id, (q) => ({ vector: q.vector ? { ...q.vector, layers: q.vector.layers.map((l, i) => (i === layer ? { ...l, role } : l)) } : q.vector }));
+  for (const p of affected) void recognizePlan(p.id);
+}
+
+/** Rooms from the plan's current walls and columns (after editing them, or for a traced picture). */
+export async function findPlanRooms(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  const cal = plan?.calibration;
+  if (!plan || !cal || !(cal.metresPerPixel > 0) || plan.walls.length === 0) return;
+  updatePlan(id, { findingRooms: true });
+  try {
+    const v = plan.vector;
+    const r = await vectorPlans.rooms(plan.walls, plan.columns, cal.metresPerPixel, v ? { id: v.drawingId, region: v.region, view: v.view, roles: v.layers.map((l) => l.role) } : undefined);
+    updatePlan(id, (p) => ({ rooms: r.rooms, outline: p.outline.length >= 3 ? p.outline : r.outline, findingRooms: false }));
+    if (r.rooms.length === 0) pushToast("info", "No closed rooms found: check that the walls meet.");
+  } catch (error) {
+    updatePlan(id, { findingRooms: false });
+    pushToast("error", error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -456,9 +694,10 @@ export function planToPart(plan: PlanItem): PlanPart | null {
   const cal = plan.calibration;
   if (!cal || !(cal.metresPerPixel > 0)) return null;
   const m = cal.metresPerPixel;
-  const outline = plan.withSlab && plan.outline.length >= 3 ? plan.outline.map((p) => pxToProject(cal, p)) : null;
+  const P = (p: [number, number]) => pxToProject(cal, p);
+  const outline = plan.withSlab && plan.outline.length >= 3 ? plan.outline.map(P) : null;
   // Walls on the outline are external.
-  const onOutline = (a: [number, number], b: [number, number]) => {
+  const onOutline = (a: [number, number], b: [number, number], t: number) => {
     if (!outline) return false;
     const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     for (let i = 0; i < outline.length; i++) {
@@ -466,11 +705,38 @@ export function planToPart(plan: PlanItem): PlanPart | null {
         q = outline[(i + 1) % outline.length];
       const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
       const d = Math.abs((mid[0] - p[0]) * (q[1] - p[1]) - (mid[1] - p[1]) * (q[0] - p[0])) / L;
-      const t = ((mid[0] - p[0]) * (q[0] - p[0]) + (mid[1] - p[1]) * (q[1] - p[1])) / (L * L);
-      if (d < 1 && t > -0.05 && t < 1.05) return true;
+      const s = ((mid[0] - p[0]) * (q[0] - p[0]) + (mid[1] - p[1]) * (q[1] - p[1])) / (L * L);
+      if (d < Math.max(1, t) && s > -0.05 && s < 1.05) return true;
     }
     return false;
   };
+  const walls = plan.walls.map((w) => {
+    const a = P(w.a);
+    const b = P(w.b);
+    const thickness = Math.round(w.thickness * m * 1000) / 1000;
+    return { a, b, thickness, external: onOutline(a, b, thickness) };
+  });
+  // Door swing directions turn with the plan.
+  const dirOf = (p: [number, number], d: [number, number]): [number, number] => {
+    const a = P(p),
+      b = P([p[0] + d[0] * 100, p[1] + d[1] * 100]);
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+  };
+  const sz = plan.sizes ?? DEFAULT_SIZES;
+  const openings = attachOpenings(
+    walls,
+    (plan.openings ?? []).map((o) => ({
+      a: P(o.a),
+      b: P(o.b),
+      kind: o.kind,
+      swing: o.swing ? dirOf(o.a, o.swing) : null,
+      operation: o.operation,
+      name: o.name,
+      sill: o.kind === "window" ? sz.windowSill : 0,
+      height: o.kind === "door" ? sz.doorHeight : o.kind === "window" ? sz.windowHeight : sz.openingHeight,
+    })),
+  );
   return {
     id: plan.id,
     name: plan.label,
@@ -478,12 +744,12 @@ export function planToPart(plan: PlanItem): PlanPart | null {
     discipline: plan.discipline,
     include: plan.include,
     storey: plan.storey,
-    walls: plan.walls.map((w) => {
-      const a = pxToProject(cal, w.a);
-      const b = pxToProject(cal, w.b);
-      return { a, b, thickness: Math.round(w.thickness * m * 1000) / 1000, external: onOutline(a, b) };
-    }),
+    walls,
     slab: outline ? { outline, thickness: plan.slabThickness } : null,
+    openings,
+    rooms: (plan.rooms ?? []).map((r) => ({ outline: r.outline.map(P), name: r.name, number: r.number })),
+    columns: (plan.columns ?? []).map((c) => ({ outline: c.outline ? c.outline.map(P) : null, circle: c.circle ? { c: P(c.circle.c), r: Math.round(c.circle.r * m * 1000) / 1000 } : null })),
+    basis: plan.vector ? "read" : "traced",
   };
 }
 
@@ -505,7 +771,7 @@ export function buildOptions(): ConvertOptions {
     storeys: s.storeys,
     parts: s.parts.map((p) => ({ id: p.id, include: s.partConfig[p.id]?.include ?? true, discipline: s.partConfig[p.id]?.discipline ?? p.suggestion.id })),
     plans: s.plans
-      .filter((p) => p.include && p.calibration && p.calibration.metresPerPixel > 0 && (p.walls.length > 0 || (p.withSlab && p.outline.length >= 3)))
+      .filter((p) => p.include && p.calibration && p.calibration.metresPerPixel > 0 && (p.walls.length > 0 || (p.withSlab && p.outline.length >= 3) || p.rooms.length > 0 || p.columns.length > 0))
       .map(planToPart)
       .filter((p): p is PlanPart => p !== null),
     excludedCategories: st.excludedCategories,

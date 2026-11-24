@@ -79,7 +79,7 @@ export function SourcesCard({ onAdd }: { onAdd: (files: File[]) => void }) {
           <CloudUpload size={22} className="text-fg-3" />
           <span className="text-[12.5px] font-medium text-fg">Drop files here, or click to choose</span>
           <span className="max-w-[46ch] text-[11.5px] leading-relaxed text-fg-3">
-            Revit (.rvt) and Navisworks (.nwd, .nwc) models, extracts from an Autodesk Viewer link (.eapk), and floor plans as PDF or images (.png, .jpg). Use whatever you have; a model, plans, or both.
+            Revit (.rvt) and Navisworks (.nwd, .nwc) models, extracts from an Autodesk Viewer link (.eapk), and floor plans as DXF drawings, PDF or images (.png, .jpg). Use whatever you have; a model, plans, or both.
           </span>
         </button>
       ) : (
@@ -137,6 +137,7 @@ function SourceRow({ source, apsReady }: { source: SourceItem; apsReady: boolean
             {source.size ? formatBytes(source.size) : null}
             {source.status === "ready" && myParts.length ? ` · ${myParts.length} source file${myParts.length === 1 ? "" : "s"} · ${formatCount(elements)} elements` : null}
             {source.status === "ready" && source.ifc ? ` · ${source.ifc.note}` : null}
+            {source.status === "ready" && source.note ? ` · ${source.note}` : null}
             {source.status === "cancelled" ? " · cancelled" : null}
           </div>
         </div>

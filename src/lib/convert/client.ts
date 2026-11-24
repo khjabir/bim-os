@@ -8,6 +8,7 @@ import type { WorkbookSettings } from "./assets/workbook";
 import type { RegisterWorkspace } from "./assets/workspace";
 import type { IfcSourceInfo } from "./ifc-source";
 import type { ConvertOptions, ConvertReport, FrameConfig, JobSummary, OutputFile, PartSummary, StoreyDef } from "./types";
+import { readyGate, type ReadyGate } from "@/lib/utils/worker-ready";
 
 type Progress = (phase: string, done: number, total: number) => void;
 
@@ -42,13 +43,16 @@ function ifcWasmPath() {
  */
 export function createConvertClient() {
   let worker: Worker | null = null;
+  let gate: ReadyGate | null = null;
   let nextId = 1;
   const pending = new Map<number, Pending>();
 
-  function getWorker(): Worker {
-    if (worker) return worker;
+  function getWorker(): ReadyGate {
+    if (worker && gate) return gate;
     worker = new Worker(new URL("./convert.worker.ts", import.meta.url), { type: "module" });
+    const own = (gate = readyGate(worker, "convert"));
     worker.onmessage = (event: MessageEvent) => {
+      if (own.handle(event.data)) return;
       const message = event.data as { id: number; type: string; result?: unknown; message?: string; phase?: string; done?: number; total?: number };
       const entry = pending.get(message.id);
       if (!entry) return;
@@ -65,15 +69,16 @@ export function createConvertClient() {
       pending.clear();
       worker?.terminate();
       worker = null;
+      gate = null;
     };
-    return worker;
+    return own;
   }
 
   function call<T>(request: Request, onProgress?: Progress): Promise<T> {
     const id = nextId++;
     return new Promise<T>((resolve, reject) => {
       pending.set(id, { resolve: resolve as (value: unknown) => void, reject, onProgress });
-      getWorker().postMessage({ ...request, id });
+      getWorker().post({ ...request, id });
     });
   }
 
@@ -97,6 +102,7 @@ export function createConvertClient() {
     terminate: () => {
       worker?.terminate();
       worker = null;
+      gate = null;
       for (const entry of pending.values()) entry.reject(new Error("Stopped."));
       pending.clear();
     },

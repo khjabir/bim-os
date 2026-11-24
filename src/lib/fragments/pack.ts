@@ -2,6 +2,7 @@
 // models into one .frag.
 
 import { JobCancelled } from "@/lib/ifc/client";
+import { readyGate } from "@/lib/utils/worker-ready";
 import type { MergedSource } from "./merge-fragments.mjs";
 import type { PackRequest, PackResponse } from "./protocol";
 
@@ -30,11 +31,13 @@ export interface CombinedFragments {
 /** Talks to one worker: every request gets exactly one final answer; progress messages come in between. */
 class PackWorker {
   private readonly worker = new Worker(new URL("./pack.worker.ts", import.meta.url), { type: "module" });
+  private readonly gate = readyGate(this.worker, "pack");
   private settle: { resolve: (message: PackResponse) => void; reject: (error: Error) => void } | null = null;
   onProgress: ((done: number, total: number) => void) | null = null;
 
   constructor(signal?: AbortSignal) {
     this.worker.onmessage = (event: MessageEvent<PackResponse>) => {
+      if (this.gate.handle(event.data)) return;
       const message = event.data;
       if (message.type === "progress") {
         this.onProgress?.(message.done, message.total);
@@ -61,7 +64,7 @@ class PackWorker {
   request(message: PackRequest, transfer: Transferable[] = []): Promise<PackResponse> {
     return new Promise((resolve, reject) => {
       this.settle = { resolve, reject };
-      this.worker.postMessage(message, transfer);
+      this.gate.post(message, transfer);
     });
   }
 

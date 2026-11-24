@@ -5,7 +5,10 @@
 import { create } from "zustand";
 import type { ApsStatus } from "@/lib/aps/client";
 import type { PlanCalibration } from "./plans/calibrate";
+import type { LayerRole } from "./plans/recognize";
 import type { TracedWall, TraceMode } from "./plans/trace";
+import type { LayerPaths, PlanView, regionTexts } from "./plans/vector";
+import type { RecognizeSettings } from "./plans/vectorTypes";
 import type { ConvertReport, FrameConfig, JobSummary, OutputFile, PartSummary, StoreyDef } from "./types";
 import { DEFAULT_CODE_PATTERN } from "./assets/categories";
 
@@ -28,6 +31,8 @@ export interface SourceItem {
   jobs?: string[];
   /** IFC delivered as-is (Revit's own exporter, the in-browser reader, or an IFC file added directly). */
   ifc?: { blob: Blob; name: string; note: string; discipline: string; include: boolean };
+  /** What was read (DXF release, units, plans found). */
+  note?: string;
 }
 
 export interface PlanTraceSettings {
@@ -44,6 +49,72 @@ export interface PlanTraceSettings {
   orthogonal: boolean;
   region: [number, number, number, number] | null;
 }
+
+/** A door, window or plain opening on a plan (image pixels). */
+export interface PlanOpeningItem {
+  a: [number, number];
+  b: [number, number];
+  kind: "door" | "window" | "opening";
+  /** Unit vector the door opens towards (image axes), or null. */
+  swing: [number, number] | null;
+  operation: string | null;
+  name: string | null;
+}
+
+export interface PlanRoomItem {
+  outline: [number, number][];
+  name: string | null;
+  number: string | null;
+}
+
+export interface PlanColumnItem {
+  outline: [number, number][] | null;
+  circle: { c: [number, number]; r: number } | null;
+}
+
+export interface PlanLayer {
+  name: string;
+  color: string;
+  role: LayerRole;
+  /** The role the reader suggested. */
+  auto: LayerRole;
+  count: number;
+}
+
+/** A plan read from CAD line work (DXF, or a PDF exported from CAD). */
+export interface PlanVector {
+  /** The drawing in the vector worker. */
+  drawingId: string;
+  kind: "dxf" | "pdf";
+  /** The part of the drawing this plan covers, and drawing units -> plan pixels. */
+  region: [number, number, number, number];
+  view: PlanView;
+  /** Where the scale came from: the file's units, a guess from door sizes or the plan's size, the sheet's scale note, or set by hand. */
+  scaleSource: "file" | "doors" | "size" | "sheet" | "set" | null;
+  unitLabel: string;
+  layers: PlanLayer[];
+  /** Line work to draw (DXF; PDFs show the rendered page). */
+  paths: LayerPaths[] | null;
+  texts: ReturnType<typeof regionTexts> | null;
+  settings: RecognizeSettings;
+  recognizing: boolean;
+  recognized: boolean;
+  warnings: string[];
+  error?: string;
+  notes: string[];
+  /** The origin follows the floor's corner until the user picks one. */
+  autoOrigin: boolean;
+}
+
+export interface PlanSizes {
+  /** Metres. */
+  doorHeight: number;
+  windowSill: number;
+  windowHeight: number;
+  openingHeight: number;
+}
+
+export const DEFAULT_SIZES: PlanSizes = { doorHeight: 2.1, windowSill: 0.9, windowHeight: 1.2, openingHeight: 2.1 };
 
 export interface PlanItem {
   id: string;
@@ -73,6 +144,14 @@ export interface PlanItem {
   withSlab: boolean;
   include: boolean;
   discipline: string;
+  /** Doors, windows, rooms and columns (image pixels). */
+  openings: PlanOpeningItem[];
+  rooms: PlanRoomItem[];
+  columns: PlanColumnItem[];
+  sizes: PlanSizes;
+  findingRooms?: boolean;
+  /** Read from line work rather than traced from the picture. */
+  vector: PlanVector | null;
 }
 
 export interface LinkState {
