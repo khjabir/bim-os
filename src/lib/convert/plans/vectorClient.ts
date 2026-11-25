@@ -4,7 +4,7 @@ import { readyGate, type ReadyGate } from "@/lib/utils/worker-ready";
 import type { PictureOptions } from "./raster";
 import type { LayerRole } from "./recognize";
 import type { LayerPaths, PlanView, VectorDrawing, regionTexts } from "./vector";
-import type { DrawingInfo, PictureInfo, PictureTexts, PxColumn, PxRecognized, PxRoom, PxWall, RecognizeSettings, VectorRequest, VectorResponse } from "./vectorTypes";
+import type { DrawingInfo, NoteTextPx, PictureInfo, PictureTexts, PxColumn, PxRecognized, PxRoom, PxWall, RecognizeSettings, VectorRequest, VectorResponse } from "./vectorTypes";
 
 type Box = [number, number, number, number];
 
@@ -61,5 +61,7 @@ export const vectorPlans = {
   areaCheck: (id: string, rooms: [number, number][][], view: PlanView, unitScale: number) => call<{ factor: number; support: number } | null>({ type: "area-check", id, rooms, view, unitScale }),
   roomAt: (walls: PxWall[], columns: PxColumn[], unitScale: number, at: [number, number], drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] }) =>
     call<PxRoom | null>({ type: "room-at", walls, columns, unitScale, at, drawing }),
+  /** The drawing's texts outside the other plans' areas, in this plan's pixels (for its notes). */
+  noteTexts: (id: string, view: PlanView, exclude: Box[]) => call<NoteTextPx[]>({ type: "note-texts", id, view, exclude }),
   release: (id: string) => call<null>({ type: "release", id }),
 };

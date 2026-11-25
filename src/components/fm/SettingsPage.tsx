@@ -13,15 +13,19 @@ import { requestPersistence, storageEstimate } from "@/lib/fm/db";
 import { clearWorkspace, updateFacility, useFm } from "@/lib/fm/store";
 import { exportWorkspace, importFile, type ImportResult } from "@/lib/fm/sync";
 import type { Facility } from "@/lib/fm/types";
+import { OnDeviceSettings } from "@/components/ondevice/OnDeviceControls";
 import { FormRow, inputCls, Modal, PageFrame, Panel, plural } from "./ui";
 
 export function SettingsPage() {
   const status = useFm((s) => s.status);
   const facility = useFm((s) => s.facility);
   return (
-    <PageFrame title="Settings" subtitle="The facility on this device, its workspace file and this device's storage.">
+    <PageFrame title="Settings" subtitle="The facility on this device, its workspace file, the on-device assistant and this device's storage.">
       {status === "ready" && facility ? <FacilityPanel facility={facility} /> : null}
       <WorkspacePanel />
+      <Panel title="On-device assistant" id="assistant">
+        <OnDeviceSettings />
+      </Panel>
       <StoragePanel />
     </PageFrame>
   );

@@ -10,7 +10,7 @@ import { areaCheck, markDimensions, scaleFromDimensions, scaleFromDoors, scaleFr
 import { addTexts, vectorizePicture, type TextBox } from "./raster";
 import { DEFAULT_RECOGNIZE, findRooms, guessUnitScale, recognize, roomAt, suggestRoles, type LayerRole, type RecognizeOptions } from "./recognize";
 import { F_DIM, findPlanRegions, fromDxf, fromPx, layerPaths, orderRegions, regionTexts, toPx, type PlanView, type Pt, type VectorDrawing } from "./vector";
-import type { DrawingInfo, PictureInfo, PictureTexts, PxColumn, PxOpening, PxRecognized, PxRoom, PxWall, VectorRequest, VectorResponse } from "./vectorTypes";
+import type { DrawingInfo, NoteTextPx, PictureInfo, PictureTexts, PxColumn, PxOpening, PxRecognized, PxRoom, PxWall, VectorRequest, VectorResponse } from "./vectorTypes";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const drawings = new Map<string, VectorDrawing>();
@@ -176,6 +176,19 @@ function handle(req: VectorRequest): VectorResponse["result"] {
         req.at,
       );
       return room ? ({ outline: room.ring, name: room.name, number: room.number } satisfies PxRoom) : null;
+    }
+    case "note-texts": {
+      const d = drawings.get(req.id);
+      if (!d) throw new Error("The drawing is no longer open.");
+      const inside = (c: Pt, b: [number, number, number, number]) => c[0] >= b[0] && c[0] <= b[2] && c[1] >= b[1] && c[1] <= b[3];
+      const out: NoteTextPx[] = [];
+      for (const t of d.texts) {
+        if (req.exclude.some((b) => inside(t.c, b))) continue;
+        const [x, y] = toPx(req.view, t.c[0], t.c[1]);
+        out.push({ text: t.text, x, y, h: t.h * req.view.k, dim: Boolean(t.flags & F_DIM) });
+        if (out.length >= 6000) break;
+      }
+      return out;
     }
     case "release":
       drawings.delete(req.id);

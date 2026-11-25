@@ -12,6 +12,7 @@ import { IfcFileWriter, type ElementDef, type ItemDef, type MeshText, type Openi
 import { chain, determinant3, multiply, rotationZ, scaling, transformBox, translation, type Affine } from "./math";
 import { meshText, polylines, shellTopology } from "./mesh";
 import { SourceJob, type ElementInfo, type Props } from "./model";
+import { roomType, slText } from "./plans/roomTypes";
 import { buildPreview, type PreviewData, type PreviewItem } from "./preview";
 import { buildRegister, type AssetOptions, type AssetRegister, type RegisterAsset, type RegisterSpace, type RegisterType } from "./assets/register";
 import { columnLabel, cobieWorkbook, FIRE_COLUMNS, registerWorkbook, TECHNICAL_COLUMNS, typeDurations, type WorkbookSettings } from "./assets/workbook";
@@ -1326,7 +1327,8 @@ export class Converter {
         );
       });
       done += plan.walls.length + (plan.openings?.length ?? 0);
-      // Rooms.
+      // Rooms: up to the ceiling when the plan gives a room height.
+      const spaceHeight = plan.roomHeight && plan.roomHeight > 0 ? Math.max(0.1, plan.roomHeight) * 1000 : height;
       (plan.rooms ?? []).forEach((room, i) => {
         const pts = room.outline.map(([x, y]) => [x * 1000, y * 1000] as [number, number]);
         if (pts.length < 3) return;
@@ -1342,6 +1344,8 @@ export class Converter {
         area = Math.abs(area) / 2;
         if (area < 1e5) return; // under 0.1 m²
         const name = room.number || room.name || `Room ${i + 1}`;
+        const type = roomType(room.type);
+        const typeSource = room.typeSource === "user" ? "Set by hand" : room.typeSource === "assistant" ? "Suggested by the on-device assistant" : "Suggested from the room's name";
         emit(
           plan.discipline || "plans",
           {
@@ -1351,20 +1355,26 @@ export class Converter {
             name,
             longName: room.name && room.number ? room.name : null,
             description: `Room ${read ? "read" : "traced"} from a floor plan`,
-            objectType: null,
+            objectType: type && type.id !== "other" ? type.label : null,
             tag: null,
             storey: storey.key,
             representation: "SweptSolid",
-            items: [{ kind: "extrusion", profile: { type: "polygon", points: pts }, origin: [0, 0, baseZ], depth: height, style: spaceStyle }],
-            psets: [{ name: "Pset_SpaceCommon", props: [{ name: "Reference", value: room.number ?? "", kind: "identifier" }, { name: "IsExternal", value: false, kind: "boolean" }] }, provenance],
+            items: [{ kind: "extrusion", profile: { type: "polygon", points: pts }, origin: [0, 0, baseZ], depth: spaceHeight, style: spaceStyle }],
+            psets: [
+              { name: "Pset_SpaceCommon", props: [{ name: "Reference", value: room.number ?? "", kind: "identifier" }, { name: "IsExternal", value: false, kind: "boolean" }] },
+              ...(type && type.id !== "other"
+                ? [{ name: "IFCStudio_Space", props: [{ name: "RoomType", value: type.label }, { name: "RoomTypeSource", value: typeSource }, { name: "UniclassSLSuggested", value: slText(type) }] }]
+                : []),
+              provenance,
+            ],
             quantities: {
               name: "Qto_SpaceBaseQuantities",
               items: [
-                { kind: "length", name: "Height", value: height },
+                { kind: "length", name: "Height", value: spaceHeight },
                 { kind: "length", name: "NetPerimeter", value: perimeter },
                 { kind: "area", name: "NetFloorArea", value: area / 1e6 },
                 { kind: "area", name: "GrossFloorArea", value: area / 1e6 },
-                { kind: "volume", name: "NetVolume", value: (area * height) / 1e9 },
+                { kind: "volume", name: "NetVolume", value: (area * spaceHeight) / 1e9 },
               ],
             },
             materials: null,

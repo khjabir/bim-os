@@ -18,7 +18,8 @@ src/lib/collection/       Opening a folder: finding the models, choosing one cop
 src/lib/fragments/        Joining several Fragments models into one file
 src/lib/data/             Element index, properties and units shared by the analysis tools
 src/lib/analysis/         Search, grouping, quantities, health checks, clash detection, IDS
-src/lib/assistant/        Assistant tools and the agent loop
+src/lib/assistant/        The viewers' AI assistant (Claude, with your own key): tools and the agent loop
+src/lib/ondevice/         The on-device assistant: open models with WebLLM in a worker, Chrome's built-in model, JSON tasks
 src/lib/rvt/              Revit import (in-browser and cloud)
 src/lib/aps/              Autodesk Platform Services: server calls and browser client
 src/lib/lmv/              Autodesk viewer session, object grouping, IFC class guessing
@@ -27,7 +28,8 @@ src/lib/convert/          Converter: extract reader, element model, materials, c
                           with instancing, conversion worker, plans (plans/: DXF reader, PDF line work, pictures read
                           as line work (raster.ts), their text (ocr.ts) and scale (pictureScale.ts), photos
                           straightened (photo.ts), recognition of walls, doors, windows, rooms and columns, the older
-                          picture tracer), asset register and COBie (assets/)
+                          picture tracer, room types (roomTypes.ts), notes (planNotes.ts), changes in words
+                          (planEdits.ts)), asset register and COBie (assets/)
 src/lib/fm/               The facility workspace: data model, IndexedDB storage and store, search and filters, task
                           library and scheduling, workspace and change files, QR codes, alarms, Brick, the demo,
                           live data (live/: MQTT over WebSocket, the simulator, CSV readings)
@@ -49,6 +51,7 @@ That Open Engine is at its latest release at the time of writing: `@thatopen/com
 - **`three` 0.184.0** (and `@types/three`). From 0.185, three's `TTFLoader` imports a library from a CDN URL, which Turbopack cannot bundle; 0.184 is also That Open 3.6's own development version.
 - **`three-mesh-bvh` 0.9.9**, matching what That Open bundles.
 - **`pdfjs-dist` 6.4.299** renders floor-plan PDFs on the Convert page. Its worker is copied to `public/pdfjs/` like the other runtime assets.
+- **`@mlc-ai/web-llm` 0.2.89** runs the on-device assistant's open models (Apache-2.0). It is only loaded in its own worker (`src/lib/ondevice/webllm.worker.ts`), so pages that do not use the assistant never load it. The model ids, their WebGPU libraries (`raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs`, `v0_2_87/base`) and their weights (`huggingface.co/mlc-ai`) come from its built-in model list, so an upgrade can change which builds are fetched: check `prebuiltAppConfig` when updating. Each model has a 16-bit build (`q4f16_1`) for GPUs with `shader-f16` and a 32-bit one (`q4f32_1`) for the others; both download the same weights.
 
 `src/lib/shims/three.js` re-exports three and adds a few WebGPU-only names as `undefined`. That Open probes for them, and Turbopack rejects a namespace member that does not exist.
 

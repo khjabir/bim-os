@@ -112,7 +112,9 @@ The same sidebar is on every page (on phones a bottom bar), grouped by what peop
 - [x] IfcDoor and IfcWindow in openings that void the walls, IfcSpace, IfcColumn; .frag downloads
 - [x] Scans and photos read like drawings: the ink turned into line work (solid walls, pens, arcs, hatching), text read in the browser (room names and numbers, dimensions, written scales, areas), the scale from dimensions, the written scale with the picture's resolution, door sizes or room areas, photos of a sheet straightened, TIFF scans, click-to-outline rooms
 - [ ] Scans and photos, harder cases: small models trained on openly licensed plans for faint or broken doors and rooms on noisy scans and photos, more languages for the text
-- [ ] An optional on-device assistant for room types, notes and plain-language edits
+- [x] Room types from room names in several languages, with suggested Uniclass SL codes; values read from the drawing's notes and title block (levels, heights, thicknesses, units, names)
+- [x] An optional on-device assistant (open models in the browser with WebLLM, or Chrome's built-in model): room types for names in any language, the notes' free text, and changes asked for in plain words, each shown before it is applied
+- [ ] The assistant, further: changes that move or add walls, doors and rooms; questions about the plan; checked against real drawings from practice
 - [ ] DWG through an optional add-on (LibreDWG is GPL, so it stays separate from the MIT code)
 - [ ] Mitred wall corners at any angle, stairs, curtain walls, grids
 

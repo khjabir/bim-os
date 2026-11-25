@@ -8,6 +8,7 @@ import type { PlanCalibration } from "./plans/calibrate";
 import type { PictureStats } from "./plans/raster";
 import type { LayerRole } from "./plans/recognize";
 import type { TracedWall, TraceMode } from "./plans/trace";
+import type { NoteBlock, NoteFinding } from "./plans/planNotes";
 import type { LayerPaths, PlanView, regionTexts } from "./plans/vector";
 import type { RecognizeSettings } from "./plans/vectorTypes";
 import type { ConvertReport, FrameConfig, JobSummary, OutputFile, PartSummary, StoreyDef } from "./types";
@@ -66,6 +67,9 @@ export interface PlanRoomItem {
   outline: [number, number][];
   name: string | null;
   number: string | null;
+  /** Room type id (roomTypes.ts), and where it came from: the room's name, the on-device assistant, or the user. */
+  type?: string | null;
+  typeSource?: "name" | "assistant" | "user" | null;
 }
 
 export interface PlanColumnItem {
@@ -178,6 +182,24 @@ export interface PlanItem {
   findingRooms?: boolean;
   /** Read from line work rather than traced from the picture. */
   vector: PlanVector | null;
+  /** Height of the rooms (floor to ceiling, metres) when it differs from the walls'. */
+  roomHeight?: number | null;
+  /** The drawing's notes and what they say. */
+  notes?: PlanNotes | null;
+  /** The plan (and the project's names) before the assistant's last changes, to undo them. */
+  undo?: { label: string; before: Partial<PlanItem>; settings?: Partial<ConvertSettings> } | null;
+}
+
+/** Notes on a plan's drawing (general notes, title block, legends) and the facts read from them. */
+export interface PlanNotes {
+  blocks: NoteBlock[];
+  findings: NoteFinding[];
+  /** Read by the assistant too. */
+  assistant: boolean;
+  /** Facts the user applied (field names). */
+  applied: string[];
+  reading?: boolean;
+  error?: string;
 }
 
 export interface LinkState {

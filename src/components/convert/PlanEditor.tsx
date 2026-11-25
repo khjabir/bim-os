@@ -13,6 +13,7 @@ import { updatePlan, useConvertStore, type PlanItem, type PlanOpeningItem, type 
 import type { StoreyDef } from "@/lib/convert/types";
 import { formatNumber } from "@/lib/utils/format";
 import { Field, NumberField, Toggle } from "./parts";
+import { AssistantSection } from "./AssistantSection";
 import { countsText, LayersSection, PictureSection, RecognizeSection, SelectionEditor, setVector, SizesSection, type Selection } from "./PlanSections";
 
 type Tool = "select" | "draw" | "door" | "window" | "room" | "outline" | "scale" | "origin" | "align" | "region" | "corners" | "pan";
@@ -983,6 +984,8 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
               </Button>
             </div>
           </section>
+
+          <AssistantSection plan={plan} step={next()} sel={sel} onChanged={() => setSel(null)} />
 
           <SizesSection plan={plan} step={next()} />
 

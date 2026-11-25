@@ -7,13 +7,15 @@
 import { ArrowLeftRight, Crop, RefreshCw, ScanText, Trash2, Undo2 } from "lucide-react";
 import { Button, Callout, Input, Segmented, Select, Spinner } from "@/components/ui/primitives";
 import { readPicture, recognizePlan, setLayerRole, setPictureSettings, straightenPicture, traceInstead } from "@/lib/convert/actions";
+import type { Selection } from "@/lib/convert/plans/planEdits";
 import { ROLE_LABELS, type LayerRole } from "@/lib/convert/plans/recognize";
 import { paperColor } from "@/lib/convert/plans/vector";
 import { updatePlan, type PlanItem, type PlanVector } from "@/lib/convert/store";
 import { formatNumber } from "@/lib/utils/format";
+import { RoomTypeSelect } from "./AssistantSection";
 import { Field, NumberField, Toggle } from "./parts";
 
-export type Selection = { kind: "wall" | "opening" | "room" | "column"; index: number } | null;
+export type { Selection } from "@/lib/convert/plans/planEdits";
 
 const ROLE_ORDER: LayerRole[] = ["wall", "door", "window", "column", "room", "text", "other", "ignore"];
 
@@ -293,6 +295,9 @@ export function SelectionEditor({ plan, sel, mpp, onDelete }: { plan: PlanItem; 
             <Input value={r.number ?? ""} onChange={(e) => set({ number: e.target.value || null })} aria-label="Room number" />
           </Field>
         </div>
+        <Field label={`Type${r.type && r.typeSource ? ` (${r.typeSource === "name" ? "from its name" : r.typeSource === "assistant" ? "suggested by the assistant" : "set by you"})` : ""}`}>
+          <RoomTypeSelect plan={plan} index={sel.index} className="h-8 text-[12.5px]" />
+        </Field>
         <div className="flex items-center gap-2">
           <span className="text-[11.5px] tabular-nums text-fg-3">{formatNumber(ringArea(r.outline) * mpp * mpp, 1)} m²</span>
           <Button size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={onDelete} className="ml-auto">

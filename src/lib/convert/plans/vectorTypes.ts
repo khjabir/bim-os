@@ -116,10 +116,26 @@ export type VectorRequest =
       at: Px;
       drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] };
     }
+  | {
+      type: "note-texts";
+      id: string;
+      view: PlanView;
+      /** Areas of the other plans on the same drawing (drawing units): their texts are theirs. */
+      exclude: Box[];
+    }
   | { type: "release"; id: string };
+
+/** A text of a drawing for its notes, in the plan's pixels. */
+export interface NoteTextPx {
+  text: string;
+  x: number;
+  y: number;
+  h: number;
+  dim: boolean;
+}
 
 export interface VectorResponse {
   seq: number;
-  result?: DrawingInfo | PictureInfo | PictureTexts | { roles: LayerRole[] } | { paths: LayerPaths[]; texts: ReturnType<typeof import("./vector").regionTexts> } | PxRecognized | { rooms: PxRoom[]; outline: Px[] } | PxRoom | { factor: number; support: number } | null;
+  result?: DrawingInfo | PictureInfo | PictureTexts | { roles: LayerRole[] } | { paths: LayerPaths[]; texts: ReturnType<typeof import("./vector").regionTexts> } | PxRecognized | { rooms: PxRoom[]; outline: Px[] } | PxRoom | { factor: number; support: number } | NoteTextPx[] | null;
   error?: string;
 }

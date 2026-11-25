@@ -57,6 +57,7 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 - One IFC per discipline plus a federated model, sharing GlobalIds, site and storeys, so the files line up.
 - IFC classes and predefined types from Revit categories and family names, Revit GUIDs kept as GlobalIds, type objects, materials, surface styles, textures and vertex colours, and shared shapes written once.
 - Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans, photos and images are read the same way after their ink is turned into line work, with their text read by OCR (room names, dimensions and the scale; photos of a sheet are straightened first). Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
+- Room types from room names (with suggested Uniclass 2015 SL codes) and values read from the drawing's notes (levels, heights, thicknesses, units, names). An optional on-device assistant runs a free, openly licensed model in the browser (Qwen3.5 with WebLLM, or Chrome's built-in model): it types rooms whose names the rules do not know, in any language, reads the notes' free text, and turns changes asked for in plain words into edits of the plan, each shown before it is applied. Nothing is sent anywhere.
 - Each IFC can also be downloaded as That Open Fragments (.frag).
 - A 3D preview with materials and textures before anything is generated.
 
@@ -75,7 +76,7 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ## How it works
 
-bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, reading plans and pictures, building the asset register) runs in web workers; text on pictures is read with [tesseract.js](https://github.com/naptha/tesseract.js) from the app's own copy of the engine. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
+bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, reading plans and pictures, building the asset register) runs in web workers; text on pictures is read with [tesseract.js](https://github.com/naptha/tesseract.js) from the app's own copy of the engine, and the optional on-device assistant runs its model with [WebLLM](https://github.com/mlc-ai/web-llm) on WebGPU in a worker. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
 
 ```mermaid
 flowchart LR
@@ -201,6 +202,9 @@ bim-os stands on these projects:
 | [three.js](https://threejs.org), [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh), [camera-controls](https://github.com/yomotsu/camera-controls) | 3D rendering, picking and navigation | MIT |
 | [rvt-rs](https://github.com/DrunkOnJava/rvt-rs) 0.17.0 | In-browser Revit reader, vendored in `public/rvt/` with its licence, notice and crate list | Apache-2.0 |
 | [pdf.js](https://github.com/mozilla/pdf.js) | Floor-plan PDFs | Apache-2.0 |
+| [tesseract.js](https://github.com/naptha/tesseract.js) (with tesseract.js-core and its English model) | Text on pictures of plans | Apache-2.0 |
+| [UTIF.js](https://github.com/photopea/UTIF.js) (utif2) | TIFF scans | MIT |
+| [WebLLM](https://github.com/mlc-ai/web-llm) (with Apache TVM's web runtime, XGrammar and tokenizers-cpp) | The on-device assistant | Apache-2.0 |
 | [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | QR codes on asset labels | MIT |
 | [FlatBuffers](https://github.com/google/flatbuffers) | Writing combined Fragments files | Apache-2.0 |
 | [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) | The AI assistant | Apache-2.0 |
@@ -208,6 +212,7 @@ bim-os stands on these projects:
 
 - The Autodesk viewer and Autodesk Platform Services are Autodesk's proprietary software and services. They are not part of this repository: the viewer is loaded from Autodesk's servers, and using either is subject to Autodesk's terms.
 - The sample model in `public/samples/lmv-shaver/` comes from Autodesk's `viewer-javascript-offline.sample` repository (MIT, licence included).
+- The on-device assistant's models are not part of this repository: they are downloaded by the browser when the assistant is first used, from Hugging Face ([Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-2B), Apache-2.0, in MLC's WebGPU builds), or are Chrome's built-in model, which Chrome provides under Google's terms.
 - IFC and IDS are open standards of [buildingSMART International](https://www.buildingsmart.org). Uniclass 2015 codes and titles are © [NBS](https://uniclass.thenbs.com).
 
 Autodesk, Revit and Navisworks are registered trademarks of Autodesk, Inc. bim-os is not affiliated with or endorsed by Autodesk, buildingSMART, That Open Company or NBS.

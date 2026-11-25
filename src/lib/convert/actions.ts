@@ -22,6 +22,7 @@ import { readSheets } from "./plans/ocr";
 import { attachOpenings } from "./plans/part";
 import { findSheet, straightenedSize, warpQuad } from "./plans/photo";
 import { DEFAULT_RECOGNIZE, type LayerRole } from "./plans/recognize";
+import { typeRoomsByName } from "./plans/roomTypes";
 import { isPlanFile, loadPlanFile, type PlanRaster } from "./plans/source";
 import { DEFAULT_TRACE } from "./plans/trace";
 import { paperColor, planView, toPx, type LayerPaths } from "./plans/vector";
@@ -630,7 +631,7 @@ export async function recognizePlan(id: string) {
         walls: r.walls,
         outline: r.outline,
         openings: r.openings,
-        rooms: r.rooms,
+        rooms: typeRoomsByName(r.rooms),
         columns: r.columns,
         traced: true,
         vector: p.vector ? { ...p.vector, recognizing: false, recognized: true, warnings: r.warnings } : p.vector,
@@ -667,7 +668,7 @@ export async function findPlanRooms(id: string) {
   try {
     const v = plan.vector;
     const r = await vectorPlans.rooms(plan.walls, plan.columns, cal.metresPerPixel, v ? { id: v.drawingId, region: v.region, view: v.view, roles: v.layers.map((l) => l.role) } : undefined);
-    updatePlan(id, (p) => ({ rooms: r.rooms, outline: p.outline.length >= 3 ? p.outline : r.outline, findingRooms: false }));
+    updatePlan(id, (p) => ({ rooms: typeRoomsByName(r.rooms), outline: p.outline.length >= 3 ? p.outline : r.outline, findingRooms: false }));
     if (r.rooms.length === 0) pushToast("info", "No closed rooms found: check that the walls meet.");
   } catch (error) {
     updatePlan(id, { findingRooms: false });
@@ -874,7 +875,7 @@ export async function outlineRoomAt(id: string, at: [number, number]) {
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if (ring[i][1] > at[1] !== ring[j][1] > at[1] && at[0] < ((ring[j][0] - ring[i][0]) * (at[1] - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) c = !c;
     return c;
   };
-  updatePlan(id, (p) => ({ rooms: [...p.rooms.filter((r) => !inside(r.outline)), room] }));
+  updatePlan(id, (p) => ({ rooms: [...p.rooms.filter((r) => !inside(r.outline)), ...typeRoomsByName([room])] }));
   return true;
 }
 
@@ -979,7 +980,8 @@ export function planToPart(plan: PlanItem): PlanPart | null {
     walls,
     slab: outline ? { outline, thickness: plan.slabThickness } : null,
     openings,
-    rooms: (plan.rooms ?? []).map((r) => ({ outline: r.outline.map(P), name: r.name, number: r.number })),
+    rooms: (plan.rooms ?? []).map((r) => ({ outline: r.outline.map(P), name: r.name, number: r.number, type: r.type ?? null, typeSource: r.typeSource ?? null })),
+    roomHeight: plan.roomHeight ?? null,
     columns: (plan.columns ?? []).map((c) => ({ outline: c.outline ? c.outline.map(P) : null, circle: c.circle ? { c: P(c.circle.c), r: Math.round(c.circle.r * m * 1000) / 1000 } : null })),
     basis: plan.vector ? "read" : "traced",
   };

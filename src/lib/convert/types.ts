@@ -83,6 +83,9 @@ export interface PlanRoom {
   outline: [number, number][];
   name: string | null;
   number: string | null;
+  /** Room type id (plans/roomTypes.ts) and where it came from. */
+  type?: string | null;
+  typeSource?: "name" | "assistant" | "user" | null;
 }
 
 export interface PlanColumn {
@@ -98,6 +101,8 @@ export interface PlanPart {
   discipline: string;
   include: boolean;
   storey: { name: string; elevation: number; height: number };
+  /** Height of the rooms (metres) when it differs from the storey's. */
+  roomHeight?: number | null;
   walls: PlanWall[];
   slab: { outline: [number, number][]; thickness: number } | null;
   openings?: PlanOpening[];
