@@ -53,10 +53,10 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ### Convert to IFC (`/convert`)
 
-- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor plans (DXF, PDF, scans, photos), or a mix of them.
+- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor plans (DXF, DWG with an optional add-on, PDF, scans, photos), or a mix of them.
 - One IFC per discipline plus a federated model, sharing GlobalIds, site and storeys, so the files line up.
 - IFC classes and predefined types from Revit categories and family names, Revit GUIDs kept as GlobalIds, type objects, materials, surface styles, textures and vertex colours, and shared shapes written once.
-- Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans, photos and images are read the same way after their ink is turned into line work, with their text read by OCR (room names, dimensions and the scale; photos of a sheet are straightened first). Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
+- Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary), DWG drawings (with the optional DWG add-on, which converts them to DXF in the browser) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans, photos and images are read the same way after their ink is turned into line work, with their text read by OCR (room names, dimensions and the scale; photos of a sheet are straightened first). Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
 - Room types from room names (with suggested Uniclass 2015 SL codes) and values read from the drawing's notes (levels, heights, thicknesses, units, names). An optional on-device assistant runs a free, openly licensed model in the browser (Qwen3.5 with WebLLM, or Chrome's built-in model): it types rooms whose names the rules do not know, in any language, reads the notes' free text, and turns changes asked for in plain words into edits of the plan, each shown before it is applied. Nothing is sent anywhere.
 - Each IFC can also be downloaded as That Open Fragments (.frag).
 - A 3D preview with materials and textures before anything is generated.
@@ -76,7 +76,7 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ## How it works
 
-bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, reading plans and pictures, building the asset register) runs in web workers; text on pictures is read with [tesseract.js](https://github.com/naptha/tesseract.js) from the app's own copy of the engine, and the optional on-device assistant runs its model with [WebLLM](https://github.com/mlc-ai/web-llm) on WebGPU in a worker. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
+bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, reading plans and pictures, building the asset register) runs in web workers; text on pictures is read with [tesseract.js](https://github.com/naptha/tesseract.js) from the app's own copy of the engine, the optional on-device assistant runs its model with [WebLLM](https://github.com/mlc-ai/web-llm) on WebGPU in a worker, and the optional DWG add-on runs [GNU LibreDWG](https://www.gnu.org/software/libredwg/) (WebAssembly) in a worker of its own. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
 
 ```mermaid
 flowchart LR
@@ -145,6 +145,7 @@ Everything is optional. Copy `.env.example` to `.env.local`, fill in what you ne
 | `npm run combine -- a.frag b.frag -o all.frag` | Joins Fragments files into one |
 | `npm run assets` | Copies the web-ifc, Fragments and pdf.js workers into `public/` (also runs on install, dev and build) |
 | `npm run build:rvt-wasm` | Rebuilds the in-browser Revit reader from rvt-rs (needs Rust) |
+| `npm run addon:dwg` | Installs the optional DWG add-on (GPL-3.0-or-later) into `public/addons/dwg/`; `-- --remove` removes it. See [addons/dwg](addons/dwg/README.md) |
 
 ## Documentation
 
@@ -168,6 +169,7 @@ src/lib/          Facility workspace (fm/), engine, IFC worker, analysis, assist
                   IFC writers, converter (with the asset register in convert/assets/) and utilities
 public/           The viewer extractor, the rvt-rs WebAssembly reader and sample files
 scripts/          Asset copy, command-line converter and combiner, rvt-rs rebuild
+addons/dwg/       The optional DWG add-on (GPL-3.0-or-later, installed on request)
 docs/             Documentation
 ```
 
@@ -205,6 +207,7 @@ bim-os stands on these projects:
 | [tesseract.js](https://github.com/naptha/tesseract.js) (with tesseract.js-core and its English model) | Text on pictures of plans | Apache-2.0 |
 | [UTIF.js](https://github.com/photopea/UTIF.js) (utif2) | TIFF scans | MIT |
 | [WebLLM](https://github.com/mlc-ai/web-llm) (with Apache TVM's web runtime, XGrammar and tokenizers-cpp) | The on-device assistant | Apache-2.0 |
+| [GNU LibreDWG](https://www.gnu.org/software/libredwg/), built for the browser by [libredwg-web](https://github.com/mlightcad/libredwg-web) 0.9.3 | DWG drawings, only in the optional DWG add-on (`addons/dwg/`), which is installed separately and is not part of the MIT code | GPL-3.0-or-later |
 | [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | QR codes on asset labels | MIT |
 | [FlatBuffers](https://github.com/google/flatbuffers) | Writing combined Fragments files | Apache-2.0 |
 | [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) | The AI assistant | Apache-2.0 |
@@ -219,4 +222,4 @@ Autodesk, Revit and Navisworks are registered trademarks of Autodesk, Inc. bim-o
 
 ## License
 
-bim-os is released under the [MIT License](LICENSE). Third-party components keep their own licences, listed above.
+bim-os is released under the [MIT License](LICENSE). Third-party components keep their own licences, listed above. The optional DWG add-on in `addons/dwg/` is the exception: it is licensed under the GNU GPL, version 3 or later, because it runs GNU LibreDWG. It is installed only on request and stays out of the app's dependencies and bundle (see [addons/dwg](addons/dwg/README.md)).

@@ -115,7 +115,7 @@ The same sidebar is on every page (on phones a bottom bar), grouped by what peop
 - [x] Room types from room names in several languages, with suggested Uniclass SL codes; values read from the drawing's notes and title block (levels, heights, thicknesses, units, names)
 - [x] An optional on-device assistant (open models in the browser with WebLLM, or Chrome's built-in model): room types for names in any language, the notes' free text, and changes asked for in plain words, each shown before it is applied
 - [ ] The assistant, further: changes that move or add walls, doors and rooms; questions about the plan; checked against real drawings from practice
-- [ ] DWG through an optional add-on (LibreDWG is GPL, so it stays separate from the MIT code)
+- [x] DWG through an optional add-on (`npm run addon:dwg`): GNU LibreDWG in WebAssembly converts each DWG to DXF in its own worker; it is GPL, so it is installed separately and stays out of the MIT code
 - [ ] Mitred wall corners at any angle, stairs, curtain walls, grids
 
 

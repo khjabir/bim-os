@@ -17,7 +17,7 @@ Drop files on the page or use *Add files*:
 | Floor plans `.dxf` | Read line by line in the browser (any release, R12 to 2018 and later, ASCII or binary). Each separate plan in the model space becomes a plan (step 2), so a ground floor and a first floor drawn side by side become two storeys. |
 | Floor plans `.pdf` | Pages drawn as line work (exported from CAD) are read like DXF, with the PDF's layers when it has them; scanned pages are read as pictures. |
 | Floor plans `.png`, `.jpg`, `.tif`, … | Scans, photos and images of plans: each is read as a picture, with its text (step 2). TIFF scans (including one-bit fax / CCITT G4) are opened in the browser. |
-| `.dwg` | Not read in the browser yet: save it as DXF (any version) or export a PDF, and add that. |
+| Floor plans `.dwg` | With the optional DWG add-on: converted to DXF in the browser by GNU LibreDWG, then read as a DXF (see [DWG drawings](#dwg-drawings)). Without it, save the drawing as DXF (any version) or export a PDF, and add that. |
 | IFC `.ifc`, `.ifczip` | Passed through to the viewer hand-off. |
 
 ## Autodesk Viewer links
@@ -34,7 +34,7 @@ If the viewer was opened some other way, the panel cannot reach the app and offe
 
 ## 2. Floor plans
 
-Plans come in two ways. **DXF files and PDFs exported from CAD are read** from their line work, exactly. **Scans, photos and images are read as pictures**: their ink is turned into line work and read the same way, with their text read by OCR for room names, dimensions and the scale. Either way walls, doors, windows, rooms and columns are found, *Edit* opens the plan in the editor, and everything found can be checked and corrected there before it is written. All of it runs in the browser: no service, no key.
+Plans come in two ways. **DXF files, DWG files (with the [DWG add-on](#dwg-drawings)) and PDFs exported from CAD are read** from their line work, exactly. **Scans, photos and images are read as pictures**: their ink is turned into line work and read the same way, with their text read by OCR for room names, dimensions and the scale. Either way walls, doors, windows, rooms and columns are found, *Edit* opens the plan in the editor, and everything found can be checked and corrected there before it is written. All of it runs in the browser: no service, no key.
 
 ### Reading DXF and CAD PDFs
 
@@ -51,6 +51,10 @@ Then, on the chosen layers:
 **Units and scale**: a DXF's units come from the file (`$INSUNITS`); for unitless files the door sizes (or the plan's size) suggest the units, shown as a guess to check. A PDF's scale is read from the sheet (`1:100`, `M 1:50`, `1/8" = 1'-0"`), or guessed from the door sizes; *Measure a known length* sets it from any dimension.
 
 **Position**: a single DXF plan drawn near its origin keeps the drawing's coordinates. Otherwise the origin sits at each floor's lower-left corner, so floors of one drawing stack; *Pick origin* on a grid intersection aligns them exactly, and with a model.
+
+### DWG drawings
+
+DWG files are read through an optional add-on, because the DWG reader it uses, GNU LibreDWG, is licensed under the GPL and this app under MIT. Whoever runs the app installs it once with `npm run addon:dwg` (see [addons/dwg](../addons/dwg/README.md) and [Development](development.md#the-dwg-add-on)); until then, adding a DWG shows how to install it, or to save the drawing as DXF or PDF instead. With the add-on, each DWG is converted to DXF on the user's computer, in its own worker (nothing is uploaded), and read like any DXF: the same plans, layers, units and recognition. The source shows the drawing's release, such as *DWG 2018 (AC1032)*, the format AutoCAD has saved in since 2018. Drawings in the 2000 to 2018 formats read in full; R13 and R14 drawings can lose old-style hatches (anonymous blocks), and drawings older than R13 read only in part. Objects LibreDWG cannot convert yet are left out.
 
 ### Reading scans, photos and images
 

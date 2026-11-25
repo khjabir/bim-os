@@ -18,6 +18,7 @@ import { classifySourceName } from "./bundle";
 import { convertWorker, type WorkerState } from "./client";
 import { pxToProject, type PlanCalibration } from "./plans/calibrate";
 import { traceInWorker } from "./plans/client";
+import { convertDwg, DWG_ADDON_PROTOCOL, dwgAddon, DwgReadError, dwgRelease, type DwgRelease } from "./plans/dwgAddon";
 import { readSheets } from "./plans/ocr";
 import { attachOpenings } from "./plans/part";
 import { findSheet, straightenedSize, warpQuad } from "./plans/photo";
@@ -433,13 +434,12 @@ const VECTOR_SETTINGS = {
   rooms: DEFAULT_RECOGNIZE.rooms,
 };
 
-export const DWG_MESSAGE = "DWG files can't be read in the browser yet. In AutoCAD (or any DWG viewer) use Save As → DXF, any version, or export a PDF, and add that instead.";
+const DWG_INSTEAD = "Or, in AutoCAD or any DWG viewer, save the drawing as DXF (any version) or export a PDF, and add that instead.";
+export const DWG_NO_ADDON = `Reading DWG files needs the optional DWG add-on, which isn't installed here. Whoever runs this app can add it with npm run addon:dwg, then restart or rebuild the app (see addons/dwg/README.md). ${DWG_INSTEAD}`;
+const DWG_OUTDATED = `The DWG add-on installed here doesn't match this version of the app. Run npm run addon:dwg again, then restart the app. ${DWG_INSTEAD}`;
 
 async function addPlanSource(sourceId: string, file: File) {
-  if (/\.dwg$/i.test(file.name)) {
-    updateSource(sourceId, { status: "failed", step: undefined, error: DWG_MESSAGE });
-    return;
-  }
+  if (/\.dwg$/i.test(file.name)) return addDwgSource(sourceId, file);
   if (/\.dxf$/i.test(file.name)) return addDxfSource(sourceId, file);
   updateSource(sourceId, { status: "working", step: /\.pdf$/i.test(file.name) ? "Rendering the PDF" : "Reading the image" });
   try {
@@ -513,11 +513,48 @@ async function addPlanSource(sourceId: string, file: File) {
   }
 }
 
+/** A DWG file: the DWG add-on converts it to DXF (with GNU LibreDWG, in its own worker), then it is read as a DXF. */
+async function addDwgSource(sourceId: string, file: File) {
+  updateSource(sourceId, { status: "working", step: "Looking for the DWG add-on" });
+  const controller = new AbortController();
+  controllers.set(sourceId, controller);
+  try {
+    const release = dwgRelease(new Uint8Array(await file.slice(0, 6).arrayBuffer()));
+    if (!release) throw new Error(`This file isn't a DWG drawing: it doesn't start the way DWG files do. ${DWG_INSTEAD}`);
+    const addon = await dwgAddon();
+    if (!addon) throw new Error(DWG_NO_ADDON);
+    if (addon.protocol !== DWG_ADDON_PROTOCOL) throw new Error(DWG_OUTDATED);
+    updateSource(sourceId, { step: `Converting the DWG (${release.name} format)` });
+    const converted = await convertDwg(file, (label) => updateSource(sourceId, { step: label }), controller.signal);
+    controllers.delete(sourceId);
+    await addDxfSource(sourceId, file, { dxf: converted.dxf, release, reader: addon.reader, code: converted.code });
+  } catch (error) {
+    controllers.delete(sourceId);
+    if (error instanceof DwgReadError && error.failure === "cancelled") {
+      updateSource(sourceId, { status: "cancelled", step: undefined });
+      return;
+    }
+    let message = error instanceof Error ? error.message : String(error);
+    if (error instanceof DwgReadError && error.failure !== "unavailable") message = `${message} ${DWG_INSTEAD}`;
+    else if (error instanceof DwgReadError) message = `${message} Run npm run addon:dwg again, then restart the app. ${DWG_INSTEAD}`;
+    updateSource(sourceId, { status: "failed", step: undefined, error: message });
+  }
+}
+
+/** A DWG already converted to DXF by the add-on. */
+interface FromDwg {
+  dxf: ArrayBuffer;
+  release: DwgRelease;
+  reader: string;
+  code: number;
+}
+
 /** A DXF file: each separate plan in its model space becomes a plan (a storey). */
-async function addDxfSource(sourceId: string, file: File) {
+async function addDxfSource(sourceId: string, file: File, dwg?: FromDwg) {
   updateSource(sourceId, { status: "working", step: "Reading the drawing" });
   try {
-    const info = await vectorPlans.openDxf(sourceId, await file.arrayBuffer());
+    const info = await vectorPlans.openDxf(sourceId, dwg ? dwg.dxf : await file.arrayBuffer());
+    const notes = dwg && dwg.code !== 0 ? [...info.notes, `${dwg.reader} worked around problems in this DWG (code ${dwg.code}); some objects may be missing. Check the plan against the drawing.`] : info.notes;
     const unitScale = info.unitScale ?? info.unitGuess?.scale ?? null;
     const scaleSource: PlanVector["scaleSource"] = info.unitScale ? "file" : (info.unitGuess?.basis ?? null);
     const unitLabel = info.unitScale ? info.unitLabel : (info.unitGuess?.label ?? "unitless");
@@ -558,7 +595,7 @@ async function addDxfSource(sourceId: string, file: File) {
             recognizing: false,
             recognized: false,
             warnings: [],
-            notes: info.notes,
+            notes,
             autoOrigin: !nearOrigin,
           },
         },
@@ -566,7 +603,8 @@ async function addDxfSource(sourceId: string, file: File) {
       );
     });
     useConvertStore.setState((s) => ({ plans: [...s.plans, ...plans] }));
-    const note = `DXF ${info.version}${info.binary ? " (binary)" : ""} · ${unitScale ? unitLabel : "units unknown"}${regions.length > 1 ? ` · ${regions.length} plans` : ""}`;
+    const format = dwg ? `DWG ${dwg.release.name} (${dwg.release.code}), read with the DWG add-on` : `DXF ${info.version}${info.binary ? " (binary)" : ""}`;
+    const note = `${format} · ${unitScale ? unitLabel : "units unknown"}${regions.length > 1 ? ` · ${regions.length} plans` : ""}`;
     updateSource(sourceId, { status: "ready", step: undefined, progress: undefined, note });
     if (!useConvertStore.getState().sources.some((x) => x.kind === "rvt" || x.kind === "nwd" || x.kind === "extract")) nameProjectFrom(file.name);
     for (const plan of plans) {

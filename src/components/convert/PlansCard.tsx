@@ -41,7 +41,7 @@ export function PlansCard() {
                     <span>
                       {plan.storey.name} · {formatNumber(plan.storey.elevation)} m
                     </span>
-                    {plan.vector ? <Badge tone="accent">{plan.vector.kind === "dxf" ? "DXF" : plan.vector.kind === "picture" ? "Picture" : "PDF lines"}</Badge> : null}
+                    {plan.vector ? <Badge tone="accent">{plan.vector.kind === "dxf" ? (/\.dwg$/i.test(plan.fileName) ? "DWG" : "DXF") : plan.vector.kind === "picture" ? "Picture" : "PDF lines"}</Badge> : null}
                     {reading ? (
                       <Badge>
                         <Spinner size={10} className="mr-1" /> {step ?? "Reading"}

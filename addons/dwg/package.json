@@ -1,0 +1,11 @@
+{
+  "name": "bim-os-dwg-addon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Optional DWG reader for IFC Studio: converts DWG drawings to DXF in the browser with GNU LibreDWG (WebAssembly). Installed by `npm run addon:dwg` from the project root.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "dependencies": {
+    "@mlightcad/libredwg-web": "0.9.3"
+  }
+}

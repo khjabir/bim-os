@@ -14,3 +14,6 @@ public/fragments
 public/pdfjs
 public/ocr
 Claude outputs/*
+
+# the optional DWG add-on (GPL-3.0-or-later), installed by npm run addon:dwg: see addons/dwg/README.md
+public/addons/
