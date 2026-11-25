@@ -53,10 +53,10 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ### Convert to IFC (`/convert`)
 
-- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor plans (DXF, PDF, images), or a mix of them.
+- Builds IFC4 files from Revit and Navisworks models, models shared in the Autodesk Viewer (read on the viewer page by a bookmarklet), floor plans (DXF, PDF, scans, photos), or a mix of them.
 - One IFC per discipline plus a federated model, sharing GlobalIds, site and storeys, so the files line up.
 - IFC classes and predefined types from Revit categories and family names, Revit GUIDs kept as GlobalIds, type objects, materials, surface styles, textures and vertex colours, and shared shapes written once.
-- Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans and images are traced. Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
+- Floor plans to BIM, in the browser with no AI service or key: DXF drawings (any release, ASCII or binary) and PDFs exported from CAD are read line by line into walls, doors, windows, rooms with their names and numbers, columns and the slab, by layer (roles guessed from AIA, ISO 13567 and Revit layer names, or from the lines); scans, photos and images are read the same way after their ink is turned into line work, with their text read by OCR (room names, dimensions and the scale; photos of a sheet are straightened first). Several plans in one drawing become storeys. Doors and windows are written in openings that void the walls, rooms as IfcSpace, after a check in the plan editor.
 - Each IFC can also be downloaded as That Open Fragments (.frag).
 - A 3D preview with materials and textures before anything is generated.
 
@@ -75,7 +75,7 @@ The same sidebar is on every page (a bottom bar on phones), grouped as Home, Fac
 
 ## How it works
 
-bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, tracing plans, building the asset register) runs in web workers. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
+bim-os is a [Next.js](https://nextjs.org) 16 app (React 19, TypeScript, Tailwind CSS). Viewing is done by [That Open Engine](https://github.com/ThatOpen) on [three.js](https://threejs.org); IFC parsing is done by web-ifc. Heavy work (converting, writing IFC, reading plans and pictures, building the asset register) runs in web workers; text on pictures is read with [tesseract.js](https://github.com/naptha/tesseract.js) from the app's own copy of the engine. The only server code is a small set of API routes that call Autodesk Platform Services and the Anthropic API with keys kept on the server.
 
 ```mermaid
 flowchart LR

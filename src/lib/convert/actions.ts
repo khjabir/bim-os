@@ -18,13 +18,15 @@ import { classifySourceName } from "./bundle";
 import { convertWorker, type WorkerState } from "./client";
 import { pxToProject, type PlanCalibration } from "./plans/calibrate";
 import { traceInWorker } from "./plans/client";
+import { readSheets } from "./plans/ocr";
 import { attachOpenings } from "./plans/part";
+import { findSheet, straightenedSize, warpQuad } from "./plans/photo";
 import { DEFAULT_RECOGNIZE, type LayerRole } from "./plans/recognize";
-import { isPlanFile, loadPlanFile } from "./plans/source";
+import { isPlanFile, loadPlanFile, type PlanRaster } from "./plans/source";
 import { DEFAULT_TRACE } from "./plans/trace";
 import { paperColor, planView, toPx, type LayerPaths } from "./plans/vector";
 import { vectorPlans } from "./plans/vectorClient";
-import { DEFAULT_SIZES, updateLink, updatePlan, updateSource, useConvertStore, type PlanItem, type PlanVector, type SourceItem, type SourceKind, type SourceMethod } from "./store";
+import { DEFAULT_SIZES, updateLink, updatePlan, updateSource, useConvertStore, type PlanItem, type PlanPicture, type PlanVector, type SourceItem, type SourceKind, type SourceMethod } from "./store";
 import type { ConvertOptions, OutputFile, PlanPart } from "./types";
 
 const controllers = new Map<string, AbortController>();
@@ -181,6 +183,8 @@ export async function removeSource(id: string) {
     plans: s.plans.filter((p) => {
       if (p.sourceId !== id) return true;
       if (p.imageUrl) URL.revokeObjectURL(p.imageUrl);
+      const original = p.vector?.picture?.original?.imageUrl;
+      if (original && original !== p.imageUrl) URL.revokeObjectURL(original);
       return false;
     }),
   }));
@@ -488,11 +492,20 @@ async function addPlanSource(sourceId: string, file: File) {
           plan.vector = null;
         }
       }
+      // A picture (an image, or a PDF page that is one): read as line work too; photos of a sheet are straightened first.
+      if (!plan.vector) {
+        plan.vector = pictureVector(plan, r);
+        const corners = findSheet(r.gray, r.width, r.height);
+        if (corners) await straightenRaster(plan, corners);
+      }
       plans.push(plan);
     }
     useConvertStore.setState((s) => ({ plans: [...s.plans, ...plans] }));
     updateSource(sourceId, { status: "ready", step: undefined, progress: undefined });
-    for (const plan of plans) if (plan.vector && plan.calibration) void recognizePlan(plan.id);
+    for (const plan of plans) {
+      if (plan.vector?.kind === "picture") void readPicture(plan.id);
+      else if (plan.vector && plan.calibration) void recognizePlan(plan.id);
+    }
     if (plans.length === 1) useConvertStore.setState({ editingPlan: plans[0].id });
   } catch (error) {
     updateSource(sourceId, { status: "failed", step: undefined, error: error instanceof Error ? error.message : String(error) });
@@ -660,6 +673,225 @@ export async function findPlanRooms(id: string) {
     updatePlan(id, { findingRooms: false });
     pushToast("error", error instanceof Error ? error.message : String(error));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pictures of plans (scans, photos): read as line work, with their text
+
+function pictureVector(plan: PlanItem, r: Pick<PlanRaster, "width" | "height" | "lightPaper" | "sizeLabel">): PlanVector {
+  return {
+    drawingId: `${plan.id}#picture`,
+    kind: "picture",
+    region: [0, 0, r.width, r.height],
+    view: { x0: 0, y1: r.height, k: 1, width: r.width, height: r.height },
+    scaleSource: null,
+    unitLabel: "pixels",
+    layers: [],
+    paths: null,
+    texts: null,
+    settings: { ...VECTOR_SETTINGS },
+    recognizing: false,
+    recognized: false,
+    warnings: [],
+    notes: [],
+    autoOrigin: true,
+    picture: { threshold: null, solidWidth: null, darkInk: r.lightPaper, step: "Waiting", stats: null, textBoxes: 0, texts: 0, scaleDetail: null, sizeLabel: r.sizeLabel ?? null, corners: null, original: null },
+  };
+}
+
+function setPicture(id: string, patch: Partial<PlanPicture>) {
+  updatePlan(id, (p) => (p.vector?.picture ? { vector: { ...p.vector, picture: { ...p.vector.picture, ...patch } } } : {}));
+}
+
+/** An image's pixels (from its object URL). */
+async function imagePixels(url: string): Promise<ImageData> {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+/** Straightens a plan's picture in place (corners in the original picture's pixels); the original is kept. */
+async function straightenRaster(plan: PlanItem, corners: [number, number][]) {
+  const original = plan.vector?.picture?.original ?? { imageUrl: plan.imageUrl, gray: plan.gray, width: plan.width, height: plan.height, lightPaper: plan.lightPaper, corners };
+  const src = await imagePixels(original.imageUrl);
+  const size = straightenedSize(corners, original.width, original.height);
+  const rgba = warpQuad(src.data, src.width, src.height, corners, size.width, size.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  canvas.getContext("2d")!.putImageData(new ImageData(rgba, size.width, size.height), 0, 0);
+  const gray = new Uint8Array(size.width * size.height);
+  let sum = 0;
+  for (let i = 0; i < gray.length; i++) {
+    const v = Math.round(0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2]);
+    gray[i] = v;
+    sum += v;
+  }
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  const imageUrl = blob ? URL.createObjectURL(blob) : canvas.toDataURL("image/png");
+  if (plan.imageUrl !== original.imageUrl && plan.imageUrl) URL.revokeObjectURL(plan.imageUrl);
+  plan.width = size.width;
+  plan.height = size.height;
+  plan.gray = gray;
+  plan.imageUrl = imageUrl;
+  plan.lightPaper = sum / gray.length > 127;
+  // The size on paper is no longer known.
+  plan.metresPerPixelAtFullSize = null;
+  plan.calibration = null;
+  if (plan.vector) {
+    plan.vector = {
+      ...plan.vector,
+      region: [0, 0, size.width, size.height],
+      view: { x0: 0, y1: size.height, k: 1, width: size.width, height: size.height },
+      scaleSource: null,
+      picture: plan.vector.picture ? { ...plan.vector.picture, original: { ...original, corners }, corners: null, sizeLabel: null, scaleDetail: null } : plan.vector.picture,
+    };
+  }
+}
+
+/** Straighten a plan's photo with these corners (in the original picture), or go back to the original (null). */
+export async function straightenPicture(id: string, corners: [number, number][] | null) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  const pic = plan?.vector?.picture;
+  if (!plan || !pic) return;
+  const next: PlanItem = { ...plan, vector: plan.vector ? { ...plan.vector } : null };
+  if (corners) await straightenRaster(next, corners);
+  else if (pic.original) {
+    if (plan.imageUrl && plan.imageUrl !== pic.original.imageUrl) URL.revokeObjectURL(plan.imageUrl);
+    const o = pic.original;
+    Object.assign(next, { width: o.width, height: o.height, gray: o.gray, imageUrl: o.imageUrl, lightPaper: o.lightPaper, calibration: null });
+    next.vector = { ...next.vector!, region: [0, 0, o.width, o.height], view: { x0: 0, y1: o.height, k: 1, width: o.width, height: o.height }, scaleSource: null, picture: { ...pic, original: null, corners: o.corners, scaleDetail: null } };
+  }
+  updatePlan(id, { width: next.width, height: next.height, gray: next.gray, imageUrl: next.imageUrl, lightPaper: next.lightPaper, metresPerPixelAtFullSize: next.metresPerPixelAtFullSize, calibration: next.calibration, vector: next.vector, walls: [], openings: [], rooms: [], columns: [], outline: [], traced: false });
+  await readPicture(id);
+}
+
+/** Reads a picture: its ink as line work, its text, the scale it gives, then walls, doors, windows, rooms and columns. */
+export async function readPicture(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  const v = plan?.vector;
+  const pic = v?.picture;
+  if (!plan || !v || !pic) return;
+  setPicture(id, { step: "Reading the lines", error: undefined });
+  try {
+    const info = await vectorPlans.openPicture(v.drawingId, plan.width, plan.height, plan.gray, { darkInk: pic.darkInk, threshold: pic.threshold, solidWidth: pic.solidWidth, region: null });
+    updatePlan(id, (p) =>
+      p.vector?.picture
+        ? {
+            vector: {
+              ...p.vector,
+              layers: info.layers.map((l, k) => ({ name: l.name, color: l.color, role: info.roles[k], auto: info.roles[k], count: l.count })),
+              picture: { ...p.vector.picture, stats: info.stats, textBoxes: info.boxes.length, step: info.boxes.length ? "Reading text" : "Reading the plan" },
+            },
+          }
+        : {},
+    );
+    let texts: { box: number; text: string }[] = [];
+    const warnings: string[] = [];
+    if (info.boxes.length) {
+      try {
+        texts = (await readSheets(info.sheets, (step) => setPicture(id, { step }))).map((t) => ({ box: t.box, text: t.text }));
+      } catch (error) {
+        warnings.push(`The text could not be read (${error instanceof Error ? error.message : String(error)}): rooms are not named and the scale has to be set by hand.`);
+      }
+    }
+    const now = useConvertStore.getState().plans.find((p) => p.id === id);
+    const r = await vectorPlans.pictureTexts(v.drawingId, texts, now?.metresPerPixelAtFullSize ?? null, now?.vector?.picture?.sizeLabel ?? null);
+    updatePlan(id, (p) => {
+      if (!p.vector?.picture) return {};
+      const patch: Partial<PlanItem> = {
+        vector: {
+          ...p.vector,
+          layers: r.layers.map((l, k) => ({ name: l.name, color: l.color, role: r.roles[k], auto: r.roles[k], count: l.count })),
+          warnings,
+          picture: { ...p.vector.picture, texts: r.texts, step: null },
+        },
+      };
+      // The scale the picture gives, unless it was set by hand.
+      if (r.scale && !(p.calibration && p.vector.scaleSource === "set")) {
+        patch.calibration = { metresPerPixel: r.scale.scale, originPx: p.calibration?.originPx ?? [0, p.height], origin: p.calibration?.origin ?? [0, 0], rotationDeg: p.calibration?.rotationDeg ?? 0 };
+        patch.vector = { ...patch.vector!, scaleSource: r.scale.basis, picture: { ...patch.vector!.picture!, scaleDetail: r.scale.detail } };
+      }
+      return patch;
+    });
+    const ready = useConvertStore.getState().plans.find((p) => p.id === id);
+    if (ready?.calibration && ready.calibration.metresPerPixel > 0) {
+      await recognizePlan(id);
+      await checkAreas(id);
+    }
+  } catch (error) {
+    setPicture(id, { step: null, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/** Room areas written in the rooms against the rooms found: a scale from door sizes is corrected by them; any other scale is only checked. */
+async function checkAreas(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  const v = plan?.vector;
+  const cal = plan?.calibration;
+  if (!plan || !v || !cal || plan.rooms.length < 2) return;
+  const check = await vectorPlans.areaCheck(v.drawingId, plan.rooms.map((r) => r.outline), v.view, cal.metresPerPixel * v.view.k).catch(() => null);
+  if (!check) return;
+  const off = Math.abs(check.factor - 1);
+  if (v.scaleSource === "doors" && off > 0.02) {
+    updatePlan(id, (p) => ({
+      calibration: p.calibration ? { ...p.calibration, metresPerPixel: p.calibration.metresPerPixel * check.factor } : p.calibration,
+      vector: p.vector ? { ...p.vector, scaleSource: "areas", picture: p.vector.picture ? { ...p.vector.picture, scaleDetail: `${check.support} room areas` } : p.vector.picture } : p.vector,
+    }));
+    await recognizePlan(id);
+  } else if (off > 0.05) {
+    updatePlan(id, (p) => ({ vector: p.vector ? { ...p.vector, warnings: [...p.vector.warnings, `The room areas written on the plan suggest a scale ${formatPercent(check.factor - 1)} different: check a known length.`] } : p.vector }));
+  }
+}
+
+const formatPercent = (x: number) => `${x > 0 ? "+" : ""}${Math.round(x * 100)}%`;
+
+/** New picture settings (ink threshold, solid ink, light lines on dark): read the picture again. */
+export function setPictureSettings(id: string, patch: Partial<Pick<PlanPicture, "threshold" | "solidWidth" | "darkInk">>) {
+  setPicture(id, patch);
+  void readPicture(id);
+}
+
+/** The room around a point (click-to-outline), from the plan's walls; it replaces a room found there before. */
+export async function outlineRoomAt(id: string, at: [number, number]) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  const cal = plan?.calibration;
+  if (!plan || !cal || !(cal.metresPerPixel > 0) || plan.walls.length === 0) return false;
+  const v = plan.vector;
+  const room = await vectorPlans.roomAt(plan.walls, plan.columns, cal.metresPerPixel, at, v ? { id: v.drawingId, region: v.region, view: v.view, roles: v.layers.map((l) => l.role) } : undefined).catch(() => null);
+  if (!room) {
+    pushToast("info", "No closed room there: the walls around it leave a gap wider than a door.");
+    return false;
+  }
+  const inside = (ring: [number, number][]) => {
+    let c = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if (ring[i][1] > at[1] !== ring[j][1] > at[1] && at[0] < ((ring[j][0] - ring[i][0]) * (at[1] - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) c = !c;
+    return c;
+  };
+  updatePlan(id, (p) => ({ rooms: [...p.rooms.filter((r) => !inside(r.outline)), room] }));
+  return true;
+}
+
+/** The older method for pictures: trace walls only (no doors, windows or text). */
+export function traceInstead(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  if (!plan?.vector || plan.vector.kind !== "picture") return;
+  void vectorPlans.release(plan.vector.drawingId).catch(() => undefined);
+  updatePlan(id, { vector: null, walls: [], openings: [], rooms: [], columns: [], outline: [], traced: false });
+}
+
+/** Back from tracing to reading the picture. */
+export function readInstead(id: string) {
+  const plan = useConvertStore.getState().plans.find((p) => p.id === id);
+  if (!plan || plan.vector || !plan.gray.length) return;
+  updatePlan(id, { vector: pictureVector(plan, plan), walls: [], openings: [], rooms: [], columns: [], outline: [], traced: false });
+  void readPicture(id);
 }
 
 export async function tracePlan(id: string) {

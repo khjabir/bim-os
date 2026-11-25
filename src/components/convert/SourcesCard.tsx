@@ -79,7 +79,7 @@ export function SourcesCard({ onAdd }: { onAdd: (files: File[]) => void }) {
           <CloudUpload size={22} className="text-fg-3" />
           <span className="text-[12.5px] font-medium text-fg">Drop files here, or click to choose</span>
           <span className="max-w-[46ch] text-[11.5px] leading-relaxed text-fg-3">
-            Revit (.rvt) and Navisworks (.nwd, .nwc) models, extracts from an Autodesk Viewer link (.eapk), and floor plans as DXF drawings, PDF or images (.png, .jpg). Use whatever you have; a model, plans, or both.
+            Revit (.rvt) and Navisworks (.nwd, .nwc) models, extracts from an Autodesk Viewer link (.eapk), and floor plans as DXF drawings, PDFs, scans or photos (.png, .jpg, .tif). Use whatever you have; a model, plans, or both.
           </span>
         </button>
       ) : (

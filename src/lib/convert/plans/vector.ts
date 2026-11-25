@@ -101,7 +101,7 @@ export interface VSymbol {
 }
 
 export interface VectorDrawing {
-  source: "dxf" | "pdf";
+  source: "dxf" | "pdf" | "picture";
   /** Metres per drawing unit when the file says; null when unitless. */
   unitScale: number | null;
   unitLabel: string;
@@ -257,7 +257,7 @@ export class DrawingBuilder {
     return Math.max(2, Math.min(720, Math.ceil(Math.abs(sweep) / Math.max(step, 1e-3))));
   }
 
-  build(source: "dxf" | "pdf", unitScale: number | null, unitLabel: string): VectorDrawing {
+  build(source: VectorDrawing["source"], unitScale: number | null, unitLabel: string): VectorDrawing {
     const n = this.segLayer.length;
     const segs = this.segs.data.slice(0, n * 4);
     let x0 = Infinity,

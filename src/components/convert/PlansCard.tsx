@@ -13,15 +13,16 @@ export function PlansCard() {
     <Card step={2} title="Floor plans" aside={<FileImage size={14} className="text-fg-3" />}>
       {plans.length === 0 ? (
         <p className="text-[12px] leading-relaxed text-fg-3">
-          Add plan drawings under Sources: DXF files and PDFs exported from CAD are read line by line (walls, doors, windows, rooms and columns, by layer); scans and images are traced. Each plan becomes a
-          storey, written on its own or together with a model.
+          Add plan drawings under Sources: DXF files and PDFs exported from CAD are read line by line (walls, doors, windows, rooms and columns, by layer); scans, photos and images are read too, with their
+          text (room names, dimensions, the scale). Each plan becomes a storey, written on its own or together with a model.
         </p>
       ) : (
         <ul className="flex flex-col gap-2" data-testid="convert-plans">
           {plans.map((plan) => {
             const scaled = Boolean(plan.calibration && plan.calibration.metresPerPixel > 0);
             const lengthM = scaled ? plan.walls.reduce((n, w) => n + Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]), 0) * plan.calibration!.metresPerPixel : 0;
-            const reading = plan.vector?.recognizing || plan.tracing;
+            const step = plan.vector?.picture?.step ?? null;
+            const reading = plan.vector?.recognizing || plan.tracing || Boolean(step);
             return (
               <li key={plan.id} className="flex items-center gap-2.5 rounded-md border border-line p-2" data-testid="convert-plan">
                 {plan.imageUrl ? (
@@ -40,13 +41,13 @@ export function PlansCard() {
                     <span>
                       {plan.storey.name} · {formatNumber(plan.storey.elevation)} m
                     </span>
-                    {plan.vector ? <Badge tone="accent">{plan.vector.kind === "dxf" ? "DXF" : "PDF lines"}</Badge> : null}
-                    {!scaled ? (
-                      <Badge tone="warn">Needs a scale</Badge>
-                    ) : reading ? (
+                    {plan.vector ? <Badge tone="accent">{plan.vector.kind === "dxf" ? "DXF" : plan.vector.kind === "picture" ? "Picture" : "PDF lines"}</Badge> : null}
+                    {reading ? (
                       <Badge>
-                        <Spinner size={10} className="mr-1" /> Reading
+                        <Spinner size={10} className="mr-1" /> {step ?? "Reading"}
                       </Badge>
+                    ) : !scaled ? (
+                      <Badge tone="warn">Needs a scale</Badge>
                     ) : plan.walls.length ? (
                       <Badge tone="ok" className="max-w-full truncate">
                         {plan.vector || plan.openings.length || plan.rooms.length ? countsText(plan) : `${plan.walls.length} walls · ${formatNumber(lengthM, 0)} m`}

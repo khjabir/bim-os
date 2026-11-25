@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import type { ApsStatus } from "@/lib/aps/client";
 import type { PlanCalibration } from "./plans/calibrate";
+import type { PictureStats } from "./plans/raster";
 import type { LayerRole } from "./plans/recognize";
 import type { TracedWall, TraceMode } from "./plans/trace";
 import type { LayerPaths, PlanView, regionTexts } from "./plans/vector";
@@ -81,16 +82,39 @@ export interface PlanLayer {
   count: number;
 }
 
-/** A plan read from CAD line work (DXF, or a PDF exported from CAD). */
+/** A picture of a plan (scan, photo, PDF page that is an image) read as line work. */
+export interface PlanPicture {
+  /** Ink settings: threshold 0..255 (null: automatic), solid ink from this stroke width in pixels (null: automatic, 0: none). */
+  threshold: number | null;
+  solidWidth: number | null;
+  darkInk: boolean;
+  /** What is being done ("Reading the lines", "Reading text"), or null. */
+  step: string | null;
+  stats: PictureStats | null;
+  /** Lines of text found, and read. */
+  textBoxes: number;
+  texts: number;
+  /** How the scale was found, in words ("7 dimensions in millimetres"). */
+  scaleDetail: string | null;
+  /** How the size on paper is known ("300 dpi", "the PDF page size"). */
+  sizeLabel: string | null;
+  /** Corners of the sheet (image pixels) when the picture looks like a photo of one. */
+  corners: [number, number][] | null;
+  /** The picture before it was straightened, with the corners used (to adjust them or go back). */
+  original: { imageUrl: string; gray: Uint8Array; width: number; height: number; lightPaper: boolean; corners: [number, number][] } | null;
+  error?: string;
+}
+
+/** A plan read from CAD line work (DXF, or a PDF exported from CAD), or from a picture. */
 export interface PlanVector {
   /** The drawing in the vector worker. */
   drawingId: string;
-  kind: "dxf" | "pdf";
+  kind: "dxf" | "pdf" | "picture";
   /** The part of the drawing this plan covers, and drawing units -> plan pixels. */
   region: [number, number, number, number];
   view: PlanView;
-  /** Where the scale came from: the file's units, a guess from door sizes or the plan's size, the sheet's scale note, or set by hand. */
-  scaleSource: "file" | "doors" | "size" | "sheet" | "set" | null;
+  /** Where the scale came from: the file's units, a guess from door sizes or the plan's size, the sheet's scale note, dimensions or room areas written on it, or set by hand. */
+  scaleSource: "file" | "doors" | "size" | "sheet" | "dims" | "areas" | "set" | null;
   unitLabel: string;
   layers: PlanLayer[];
   /** Line work to draw (DXF; PDFs show the rendered page). */
@@ -104,6 +128,8 @@ export interface PlanVector {
   notes: string[];
   /** The origin follows the floor's corner until the user picks one. */
   autoOrigin: boolean;
+  /** Pictures only. */
+  picture?: PlanPicture;
 }
 
 export interface PlanSizes {

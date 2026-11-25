@@ -110,7 +110,8 @@ The same sidebar is on every page (on phones a bottom bar), grouped by what peop
 - [x] Layer roles from AIA, ISO 13567, Revit and plain-language layer names in several languages, or from the line work; PDFs without layers grouped by pen
 - [x] Several plans in one drawing as storeys; units and scales from the file, the sheet or the door sizes
 - [x] IfcDoor and IfcWindow in openings that void the walls, IfcSpace, IfcColumn; .frag downloads
-- [ ] Scans and photos: text reading for room names and dimensions, automatic scale, door and window detection and click-to-outline rooms, with small models trained on openly licensed plans
+- [x] Scans and photos read like drawings: the ink turned into line work (solid walls, pens, arcs, hatching), text read in the browser (room names and numbers, dimensions, written scales, areas), the scale from dimensions, the written scale with the picture's resolution, door sizes or room areas, photos of a sheet straightened, TIFF scans, click-to-outline rooms
+- [ ] Scans and photos, harder cases: small models trained on openly licensed plans for faint or broken doors and rooms on noisy scans and photos, more languages for the text
 - [ ] An optional on-device assistant for room types, notes and plain-language edits
 - [ ] DWG through an optional add-on (LibreDWG is GPL, so it stays separate from the MIT code)
 - [ ] Mitred wall corners at any angle, stairs, curtain walls, grids

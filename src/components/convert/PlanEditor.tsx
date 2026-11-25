@@ -1,10 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { AppWindow, Crosshair, DoorOpen, Hand, House, Maximize, MousePointer2, PenLine, Ruler, ScanLine, Shapes, SquareDashed, Trash2, Wand2, X } from "lucide-react";
+import { AppWindow, Crop, Crosshair, DoorOpen, Hand, House, Maximize, MousePointer2, PaintBucket, PenLine, Ruler, ScanLine, ScanText, Shapes, SquareDashed, Trash2, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Callout, IconButton, Input, Segmented, Select, Spinner } from "@/components/ui/primitives";
-import { findPlanRooms, recognizePlan, tracePlan } from "@/lib/convert/actions";
+import { findPlanRooms, outlineRoomAt, readInstead, recognizePlan, straightenPicture, tracePlan } from "@/lib/convert/actions";
 import { DISCIPLINES } from "@/lib/convert/disciplines";
 import { distancePx, rotationFromLine, type PlanCalibration } from "@/lib/convert/plans/calibrate";
 import type { TracedWall, TraceMode } from "@/lib/convert/plans/trace";
@@ -13,9 +13,9 @@ import { updatePlan, useConvertStore, type PlanItem, type PlanOpeningItem, type 
 import type { StoreyDef } from "@/lib/convert/types";
 import { formatNumber } from "@/lib/utils/format";
 import { Field, NumberField, Toggle } from "./parts";
-import { countsText, LayersSection, RecognizeSection, SelectionEditor, setVector, SizesSection, type Selection } from "./PlanSections";
+import { countsText, LayersSection, PictureSection, RecognizeSection, SelectionEditor, setVector, SizesSection, type Selection } from "./PlanSections";
 
-type Tool = "select" | "draw" | "door" | "window" | "outline" | "scale" | "origin" | "align" | "region" | "pan";
+type Tool = "select" | "draw" | "door" | "window" | "room" | "outline" | "scale" | "origin" | "align" | "region" | "corners" | "pan";
 type Pt = [number, number];
 
 const TOOLS: { id: Tool; label: string; icon: React.ReactNode; hint: string }[] = [
@@ -23,11 +23,13 @@ const TOOLS: { id: Tool; label: string; icon: React.ReactNode; hint: string }[] 
   { id: "draw", label: "Draw walls", icon: <PenLine size={15} />, hint: "Click the start and end of each wall; it continues from the last point. Shift keeps it straight. Esc stops." },
   { id: "door", label: "Add a door", icon: <DoorOpen size={15} />, hint: "Click both sides of the door on its wall." },
   { id: "window", label: "Add a window", icon: <AppWindow size={15} />, hint: "Click both sides of the window on its wall." },
+  { id: "room", label: "Outline a room", icon: <PaintBucket size={15} />, hint: "Click inside a room: its outline is found from the walls around it, and its name from the text in it." },
   { id: "outline", label: "Slab outline", icon: <Shapes size={15} />, hint: "Drag corners to move them, click an edge to add a corner, Alt-click a corner to remove it." },
   { id: "scale", label: "Measure scale", icon: <Ruler size={15} />, hint: "Click both ends of a dimension you know, then type its length." },
   { id: "origin", label: "Set origin", icon: <Crosshair size={15} />, hint: "Click the point that sits at the X / Y position given on the right (a grid intersection, a building corner)." },
   { id: "align", label: "Align X axis", icon: <ScanLine size={15} />, hint: "Click two points along a line that should run along the project's X axis." },
   { id: "region", label: "Limit to an area", icon: <SquareDashed size={15} />, hint: "Drag a rectangle around the plan to leave out title blocks, legends and details." },
+  { id: "corners", label: "Straighten a photo", icon: <Crop size={15} />, hint: "Drag the four handles onto the corners of the sheet of paper, then Straighten." },
   { id: "pan", label: "Pan", icon: <Hand size={15} />, hint: "Drag to move around; the wheel zooms." },
 ];
 
@@ -88,7 +90,8 @@ function centroid(ring: Pt[]): Pt {
 function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ x: 0, y: 0, z: 1 });
-  const [tool, setTool] = useState<Tool>(isScaled(plan.calibration) ? "select" : "scale");
+  // Pictures and drawings find their own scale: the measuring tool first only for pictures traced the older way.
+  const [tool, setTool] = useState<Tool>(isScaled(plan.calibration) || plan.vector ? "select" : "scale");
   const [pending, setPending] = useState<Pt[]>([]);
   const [hover, setHover] = useState<Pt | null>(null);
   const [sel, setSel] = useState<Selection>(null);
@@ -100,11 +103,14 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
     | { kind: "end"; wall: number; end: "a" | "b" }
     | { kind: "vertex"; index: number }
     | { kind: "region"; start: Pt }
+    | { kind: "corner"; index: number }
     | null
   >(null);
   const [draftWalls, setDraftWalls] = useState<TracedWall[] | null>(null);
   const [draftOutline, setDraftOutline] = useState<Pt[] | null>(null);
   const [draftRegion, setDraftRegion] = useState<[number, number, number, number] | null>(null);
+  /** Corners of the sheet while straightening (in the picture shown: the original when there is one). */
+  const [corners, setCorners] = useState<Pt[] | null>(null);
 
   const walls = draftWalls ?? plan.walls;
   const outline = draftOutline ?? plan.outline;
@@ -112,7 +118,10 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
   const scaled = isScaled(cal);
   const mpp = scaled ? cal.metresPerPixel : 0;
   const vector = plan.vector;
+  const picture = vector?.picture ?? null;
   const selectedWall = sel?.kind === "wall" ? sel.index : null;
+  const cornering = tool === "corners" && Boolean(picture) && Boolean(corners);
+  const display = cornering && picture?.original ? { url: picture.original.imageUrl, w: picture.original.width, h: picture.original.height } : { url: plan.imageUrl, w: plan.width, h: plan.height };
 
   const close = () => useConvertStore.setState({ editingPlan: null });
 
@@ -120,9 +129,9 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
     const el = viewport.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const z = Math.min(r.width / plan.width, r.height / plan.height) * 0.96;
-    setView({ z, x: (r.width - plan.width * z) / 2, y: (r.height - plan.height * z) / 2 });
-  }, [plan.width, plan.height]);
+    const z = Math.min(r.width / display.w, r.height / display.h) * 0.96;
+    setView({ z, x: (r.width - display.w * z) / 2, y: (r.height - display.h * z) / 2 });
+  }, [display.w, display.h]);
   useLayoutEffect(() => fit(), [fit]);
 
   // Wheel zoom around the cursor (non-passive, to keep the page from scrolling).
@@ -348,6 +357,21 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
       setSel({ kind: "opening", index: plan.openings.length });
       return;
     }
+    if (tool === "room") {
+      if (!scaled || !walls.length) return startPan();
+      void outlineRoomAt(plan.id, p).then((ok) => {
+        if (ok) setSel({ kind: "room", index: useConvertStore.getState().plans.find((x) => x.id === plan.id)!.rooms.length - 1 });
+      });
+      return;
+    }
+    if (tool === "corners") {
+      if (!corners) return startPan();
+      const hitR = 12 / view.z;
+      const ci = corners.findIndex((c) => Math.hypot(c[0] - p[0], c[1] - p[1]) < hitR);
+      if (ci >= 0) drag.current = { kind: "corner", index: ci };
+      else startPan();
+      return;
+    }
     if (tool === "region") {
       drag.current = { kind: "region", start: p };
       setDraftRegion([p[0], p[1], p[0], p[1]]);
@@ -419,6 +443,7 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
       setDraftWalls(draftWalls.map((x, i) => (i === d.wall ? { ...x, [d.end]: q } : x)));
     } else if (d.kind === "vertex" && draftOutline) setDraftOutline(draftOutline.map((v, i) => (i === d.index ? p : v)));
     else if (d.kind === "region") setDraftRegion([Math.min(d.start[0], p[0]), Math.min(d.start[1], p[1]), Math.max(d.start[0], p[0]), Math.max(d.start[1], p[1])]);
+    else if (d.kind === "corner" && corners) setCorners(corners.map((c, i) => (i === d.index ? [Math.max(0, Math.min(display.w, p[0])), Math.max(0, Math.min(display.h, p[1]))] : c)));
   };
 
   const fullRegion = vector ? ([vector.view.x0, vector.view.y1 - vector.view.height / vector.view.k, vector.view.x0 + vector.view.width / vector.view.k, vector.view.y1] as [number, number, number, number]) : null;
@@ -444,6 +469,29 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
     setDraftWalls(null);
     setDraftOutline(null);
     setDraftRegion(null);
+  };
+
+  const startCorners = () => {
+    if (!picture) return;
+    const w = picture.original?.width ?? plan.width,
+      h = picture.original?.height ?? plan.height;
+    const m = 0.06;
+    setCorners(
+      (picture.original?.corners ?? picture.corners ?? [
+        [w * m, h * m],
+        [w * (1 - m), h * m],
+        [w * (1 - m), h * (1 - m)],
+        [w * m, h * (1 - m)],
+      ]).map((c) => [c[0], c[1]] as Pt),
+    );
+    setTool("corners");
+  };
+  const applyCorners = () => {
+    if (!corners) return;
+    const c = corners.map((q) => [q[0], q[1]] as [number, number]);
+    setCorners(null);
+    setTool("select");
+    void straightenPicture(plan.id, c);
   };
 
   const applyMeasured = () => {
@@ -486,12 +534,12 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <span className="truncate text-[13px] font-semibold text-fg">{plan.label}</span>
         <span className="truncate text-[12px] text-fg-3">
-          {vector ? (vector.kind === "dxf" ? `Drawing · ${vector.unitLabel}` : "PDF line work") : `${plan.width} × ${plan.height} px`}
+          {vector ? (vector.kind === "dxf" ? `Drawing · ${vector.unitLabel}` : vector.kind === "picture" ? `Picture · ${plan.width} × ${plan.height} px` : "PDF line work") : `${plan.width} × ${plan.height} px`}
           {scaled ? ` · 1 px = ${formatNumber(mpp * 1000, 1)} mm` : " · no scale yet"}
         </span>
-        {vector?.recognizing ? (
-          <span className="flex items-center gap-1.5 text-[12px] text-fg-3">
-            <Spinner size={12} /> Reading the plan…
+        {picture?.step || vector?.recognizing ? (
+          <span className="flex items-center gap-1.5 text-[12px] text-fg-3" data-testid="plan-busy">
+            <Spinner size={12} /> {picture?.step ?? "Reading the plan"}…
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
@@ -506,15 +554,17 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-2" role="toolbar" aria-label="Plan tools">
-          {TOOLS.map((t) => (
+          {TOOLS.filter((t) => t.id !== "corners" || picture).map((t) => (
             <IconButton
               key={t.id}
               label={t.label}
               active={tool === t.id}
-              disabled={!scaled && (t.id === "draw" || t.id === "outline" || t.id === "door" || t.id === "window")}
+              disabled={(!scaled && (t.id === "draw" || t.id === "outline" || t.id === "door" || t.id === "window" || t.id === "room")) || (t.id === "room" && !walls.length)}
               onClick={() => {
-                setTool(t.id);
                 setPending([]);
+                if (t.id === "corners") return startCorners();
+                setCorners(null);
+                setTool(t.id);
               }}
             >
               {t.icon}
@@ -533,7 +583,7 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
             onContextMenu={(e) => e.preventDefault()}
             data-testid="plan-viewport"
           >
-            <div style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${view.x}px, ${view.y}px) scale(${z})`, width: plan.width, height: plan.height }}>
+            <div style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${view.x}px, ${view.y}px) scale(${z})`, width: display.w, height: display.h }}>
               {vector?.kind === "dxf" ? (
                 <svg className="pointer-events-none absolute left-0 top-0 block overflow-visible bg-white" width={plan.width} height={plan.height} viewBox={`0 0 ${plan.width} ${plan.height}`} data-testid="plan-linework">
                   {(vector.paths ?? []).map((p) =>
@@ -557,9 +607,17 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
                 </svg>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={plan.imageUrl} alt="" draggable={false} width={plan.width} height={plan.height} className="pointer-events-none block max-w-none select-none bg-white" />
+                <img src={display.url} alt="" draggable={false} width={display.w} height={display.h} className="pointer-events-none block max-w-none select-none bg-white" />
               )}
-              <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={plan.width} height={plan.height} viewBox={`0 0 ${plan.width} ${plan.height}`}>
+              {cornering && corners ? (
+                <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={display.w} height={display.h} viewBox={`0 0 ${display.w} ${display.h}`} data-testid="plan-corners">
+                  <polygon points={corners.map((c) => c.join(",")).join(" ")} fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={2 / z} />
+                  {corners.map((c, i) => (
+                    <circle key={i} cx={c[0]} cy={c[1]} r={8 / z} fill="#fff" stroke="#2563eb" strokeWidth={2 / z} />
+                  ))}
+                </svg>
+              ) : null}
+              <svg className={clsx("pointer-events-none absolute left-0 top-0 overflow-visible", cornering && "hidden")} width={plan.width} height={plan.height} viewBox={`0 0 ${plan.width} ${plan.height}`}>
                 {plan.rooms.map((r, i) => (
                   <polygon
                     key={`r${i}`}
@@ -634,6 +692,24 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
             </div>
           </div>
           {activeHint ? <div className="pointer-events-none absolute bottom-2 left-2 right-2 rounded-md bg-surface/95 px-2.5 py-1.5 text-[11.5px] text-fg-2 shadow">{activeHint}</div> : null}
+          {cornering ? (
+            <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-surface p-2 shadow">
+              <span className="text-[12px] text-fg-2">Corners of the sheet</span>
+              <Button variant="primary" size="sm" icon={<Crop size={12} />} onClick={applyCorners}>
+                Straighten
+              </Button>
+              <IconButton
+                label="Cancel"
+                size="sm"
+                onClick={() => {
+                  setCorners(null);
+                  setTool("select");
+                }}
+              >
+                <X size={13} />
+              </IconButton>
+            </div>
+          ) : null}
           {measured ? (
             <form
               className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-surface p-2 shadow"
@@ -681,8 +757,19 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
             {vector?.kind === "dxf" && vector.scaleSource && vector.scaleSource !== "file" && vector.scaleSource !== "set" ? (
               <Callout tone="info">The file does not say its units; {vector.scaleSource === "doors" ? "the door sizes" : "the plan's size"} suggest {vector.unitLabel}. Check a known length.</Callout>
             ) : null}
+            {vector?.kind === "picture" && vector.scaleSource && vector.scaleSource !== "set" && picture?.scaleDetail ? (
+              <Callout tone={vector.scaleSource === "doors" ? "warn" : "info"}>
+                {vector.scaleSource === "dims"
+                  ? `Scale read from ${picture.scaleDetail}.`
+                  : vector.scaleSource === "sheet"
+                    ? `Scale from the sheet: ${picture.scaleDetail}.`
+                    : vector.scaleSource === "areas"
+                      ? `Scale from ${picture.scaleDetail} written on the plan.`
+                      : `Scale guessed from ${picture.scaleDetail}: check a known length.`}
+              </Callout>
+            ) : null}
             {plan.metresPerPixelAtFullSize ? (
-              <Field label="Drawing scale (PDF)">
+              <Field label={vector?.kind === "picture" ? `Drawing scale (${picture?.sizeLabel ?? "picture"})` : "Drawing scale (PDF)"}>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[12.5px] text-fg-2">1 :</span>
                   <NumberField
@@ -788,12 +875,18 @@ function Editor({ plan, storeys }: { plan: PlanItem; storeys: StoreyDef[] }) {
 
           {vector ? (
             <>
+              {picture ? <PictureSection plan={plan} step={next()} onStraighten={startCorners} /> : null}
               <LayersSection plan={plan} step={next()} />
               <RecognizeSection plan={plan} step={next()} scaled={scaled} />
             </>
           ) : (
             <section className="flex flex-col gap-2">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3">{next()} · Trace walls</h3>
+              {plan.gray.length ? (
+                <Button size="sm" icon={<ScanText size={12} />} onClick={() => readInstead(plan.id)} title="Walls, doors, windows, columns, rooms and their names, and the scale, read from the picture">
+                  Read the picture instead
+                </Button>
+              ) : null}
               <Segmented<TraceMode>
                 value={plan.trace.mode}
                 onChange={(mode) => setTrace({ mode })}

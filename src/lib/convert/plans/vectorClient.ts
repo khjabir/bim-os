@@ -1,9 +1,10 @@
 // Main-thread side of the vector plan worker.
 
 import { readyGate, type ReadyGate } from "@/lib/utils/worker-ready";
+import type { PictureOptions } from "./raster";
 import type { LayerRole } from "./recognize";
 import type { LayerPaths, PlanView, VectorDrawing, regionTexts } from "./vector";
-import type { DrawingInfo, PxColumn, PxRecognized, PxRoom, PxWall, RecognizeSettings, VectorRequest, VectorResponse } from "./vectorTypes";
+import type { DrawingInfo, PictureInfo, PictureTexts, PxColumn, PxRecognized, PxRoom, PxWall, RecognizeSettings, VectorRequest, VectorResponse } from "./vectorTypes";
 
 type Box = [number, number, number, number];
 
@@ -50,5 +51,15 @@ export const vectorPlans = {
   recognize: (id: string, region: Box, view: PlanView, roles: LayerRole[], unitScale: number, settings: RecognizeSettings) => call<PxRecognized>({ type: "recognize", id, region, view, roles, unitScale, settings }),
   rooms: (walls: PxWall[], columns: PxColumn[], unitScale: number, drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] }) =>
     call<{ rooms: PxRoom[]; outline: [number, number][] }>({ type: "rooms", walls, columns, unitScale, drawing }),
+  /** A picture read as line work (the grey values are copied, the plan keeps its own). */
+  openPicture: (id: string, width: number, height: number, gray: Uint8Array, options: PictureOptions) => {
+    const copy = gray.slice();
+    return call<PictureInfo>({ type: "open-picture", id, width, height, gray: copy, options }, [copy.buffer]);
+  },
+  pictureTexts: (id: string, texts: { box: number; text: string }[], metresPerPixelAtFullSize: number | null, sizeLabel: string | null) =>
+    call<PictureTexts>({ type: "picture-texts", id, texts, metresPerPixelAtFullSize, sizeLabel }),
+  areaCheck: (id: string, rooms: [number, number][][], view: PlanView, unitScale: number) => call<{ factor: number; support: number } | null>({ type: "area-check", id, rooms, view, unitScale }),
+  roomAt: (walls: PxWall[], columns: PxColumn[], unitScale: number, at: [number, number], drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] }) =>
+    call<PxRoom | null>({ type: "room-at", walls, columns, unitScale, at, drawing }),
   release: (id: string) => call<null>({ type: "release", id }),
 };

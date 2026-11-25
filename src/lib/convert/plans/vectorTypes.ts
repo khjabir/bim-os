@@ -1,5 +1,7 @@
 // Messages between the Convert page and the vector plan worker.
 
+import type { ScaleGuess } from "./pictureScale";
+import type { PictureOptions, PictureStats, TextBox, TextSheets } from "./raster";
 import type { LayerRole, RecognizeOptions } from "./recognize";
 import type { LayerPaths, PlanView, VectorDrawing } from "./vector";
 
@@ -22,6 +24,23 @@ export interface DrawingInfo {
   binary: boolean;
   paperSpace?: number;
   entities?: number;
+}
+
+/** A picture read as line work: its layers (inks), the lines of text to read, and what the doors say about the scale. */
+export interface PictureInfo extends DrawingInfo {
+  sheets: TextSheets;
+  boxes: TextBox[];
+  stats: PictureStats;
+  doors: ScaleGuess | null;
+}
+
+/** After the text was read: the layers' roles again, and the scale the picture gives. */
+export interface PictureTexts {
+  layers: DrawingInfo["layers"];
+  roles: LayerRole[];
+  scale: ScaleGuess | null;
+  candidates: ScaleGuess[];
+  texts: number;
 }
 
 export interface PxWall {
@@ -78,10 +97,29 @@ export type VectorRequest =
       /** Room names come from the drawing's texts when it has one. */
       drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] };
     }
+  | { type: "open-picture"; id: string; width: number; height: number; gray: Uint8Array; options: PictureOptions }
+  | {
+      type: "picture-texts";
+      id: string;
+      texts: { box: number; text: string }[];
+      /** Metres per pixel at 1:1 (PDF page size or the picture's resolution), and how it is known ("300 dpi"). */
+      metresPerPixelAtFullSize: number | null;
+      sizeLabel: string | null;
+    }
+  | { type: "area-check"; id: string; rooms: Px[][]; view: PlanView; unitScale: number }
+  | {
+      type: "room-at";
+      walls: PxWall[];
+      columns: PxColumn[];
+      /** Metres per pixel. */
+      unitScale: number;
+      at: Px;
+      drawing?: { id: string; region: Box; view: PlanView; roles: LayerRole[] };
+    }
   | { type: "release"; id: string };
 
 export interface VectorResponse {
   seq: number;
-  result?: DrawingInfo | { roles: LayerRole[] } | { paths: LayerPaths[]; texts: ReturnType<typeof import("./vector").regionTexts> } | PxRecognized | { rooms: PxRoom[]; outline: Px[] } | null;
+  result?: DrawingInfo | PictureInfo | PictureTexts | { roles: LayerRole[] } | { paths: LayerPaths[]; texts: ReturnType<typeof import("./vector").regionTexts> } | PxRecognized | { rooms: PxRoom[]; outline: Px[] } | PxRoom | { factor: number; support: number } | null;
   error?: string;
 }

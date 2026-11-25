@@ -4,9 +4,9 @@
 // (layers and their roles, recognition settings), and for what the editor
 // selects: walls, doors and windows, rooms and columns.
 
-import { ArrowLeftRight, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Crop, RefreshCw, ScanText, Trash2, Undo2 } from "lucide-react";
 import { Button, Callout, Input, Segmented, Select, Spinner } from "@/components/ui/primitives";
-import { recognizePlan, setLayerRole } from "@/lib/convert/actions";
+import { readPicture, recognizePlan, setLayerRole, setPictureSettings, straightenPicture, traceInstead } from "@/lib/convert/actions";
 import { ROLE_LABELS, type LayerRole } from "@/lib/convert/plans/recognize";
 import { paperColor } from "@/lib/convert/plans/vector";
 import { updatePlan, type PlanItem, type PlanVector } from "@/lib/convert/store";
@@ -21,6 +21,80 @@ export function setVector(plan: PlanItem, patch: Partial<PlanVector>) {
   updatePlan(plan.id, (p) => ({ vector: p.vector ? { ...p.vector, ...patch } : p.vector }));
 }
 
+/** Pictures: reading progress, the ink settings, straightening, and the older wall tracer. */
+export function PictureSection({ plan, step, onStraighten }: { plan: PlanItem; step: number; onStraighten: () => void }) {
+  const v = plan.vector!;
+  const pic = v.picture!;
+  const busy = Boolean(pic.step) || v.recognizing;
+  const stats = pic.stats;
+  const solidMode = pic.solidWidth === null ? "auto" : pic.solidWidth === 0 ? "none" : "set";
+  return (
+    <section className="flex flex-col gap-2" data-testid="plan-picture">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3">{step} · Picture</h3>
+      {pic.step ? (
+        <p className="flex items-center gap-1.5 text-[12px] text-fg-2">
+          <Spinner size={12} /> {pic.step}…
+        </p>
+      ) : stats ? (
+        <p className="text-[11.5px] leading-snug text-fg-3" data-testid="picture-stats">
+          {stats.fills ? "Solid walls" : "Walls drawn as lines"} · {stats.pens.length === 1 ? "one pen" : `${stats.pens.length} pens`}
+          {stats.arcs ? ` · ${stats.arcs} arcs` : ""} · {pic.texts} of {pic.textBoxes} lines of text read{stats.flattened ? " · light evened out" : ""}
+        </p>
+      ) : null}
+      {pic.error ? <Callout tone="warn">{pic.error}</Callout> : null}
+      <Field label={`Ink threshold${pic.threshold === null ? ` (auto${stats ? `: ${stats.threshold}` : ""})` : `: ${pic.threshold}`}`}>
+        <input
+          type="range"
+          min={0}
+          max={255}
+          value={pic.threshold ?? stats?.threshold ?? 128}
+          disabled={busy}
+          onChange={(e) => setVector(plan, { picture: { ...pic, threshold: Number(e.target.value) } })}
+          onPointerUp={(e) => setPictureSettings(plan.id, { threshold: Number((e.target as HTMLInputElement).value) })}
+          onKeyUp={(e) => setPictureSettings(plan.id, { threshold: Number((e.target as HTMLInputElement).value) })}
+          onDoubleClick={() => setPictureSettings(plan.id, { threshold: null })}
+          aria-label="Ink threshold (double-click for automatic)"
+          className="h-7 accent-[var(--accent)]"
+        />
+      </Field>
+      <Field label="Solid ink (filled walls, columns)">
+        <Segmented<"auto" | "none" | "set">
+          value={solidMode}
+          onChange={(m) => setPictureSettings(plan.id, { solidWidth: m === "auto" ? null : m === "none" ? 0 : Math.max(3, Math.round(stats?.solidWidth ?? 6)) })}
+          options={[
+            { value: "auto", label: "Auto", title: "Strokes much wider than the pens are solid" },
+            { value: "set", label: "From width", title: "Strokes at least this wide (pixels) are solid" },
+            { value: "none", label: "None", title: "Everything is line work (walls drawn as two lines)" },
+          ]}
+        />
+      </Field>
+      {solidMode === "set" ? (
+        <Field label="Solid from (pixels wide)">
+          <NumberField value={pic.solidWidth ?? 6} min={2} step={1} label="Solid ink width" onChange={(n) => setPictureSettings(plan.id, { solidWidth: Math.max(2, n) })} />
+        </Field>
+      ) : null}
+      <Toggle checked={!pic.darkInk} onChange={(on) => setPictureSettings(plan.id, { darkInk: !on })} label="Light lines on a dark background" hint="Blueprints and inverted scans." />
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" icon={busy ? <Spinner size={12} /> : <ScanText size={12} />} disabled={busy} onClick={() => void readPicture(plan.id)}>
+          Read the picture again
+        </Button>
+        <Button size="sm" icon={<Crop size={12} />} disabled={busy} onClick={onStraighten} title="Drag the sheet's corners onto the corners of the paper in a photo">
+          {pic.original ? "Adjust straightening" : "Straighten a photo"}
+        </Button>
+        {pic.original ? (
+          <Button size="sm" icon={<Undo2 size={12} />} disabled={busy} onClick={() => void straightenPicture(plan.id, null)}>
+            Use the original picture
+          </Button>
+        ) : null}
+      </div>
+      {pic.original ? <p className="text-[11px] leading-snug text-fg-3">This photo was straightened: the sheet&apos;s corners were found and the perspective taken out.</p> : null}
+      <button type="button" className="self-start text-[11px] text-fg-3 underline" disabled={busy} onClick={() => traceInstead(plan.id)}>
+        Trace walls only (the older method)
+      </button>
+    </section>
+  );
+}
+
 export function LayersSection({ plan, step }: { plan: PlanItem; step: number }) {
   const v = plan.vector!;
   const used = v.layers.map((l, i) => ({ ...l, i })).filter((l) => l.count > 0);
@@ -29,9 +103,11 @@ export function LayersSection({ plan, step }: { plan: PlanItem; step: number }) 
     <section className="flex flex-col gap-2" data-testid="plan-layers">
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-3">{step} · Layers</h3>
       <p className="text-[11px] leading-snug text-fg-3">
-        {v.kind === "pdf" && v.layers.some((l) => l.name.startsWith("Pen "))
-          ? "This PDF has no layers, so its lines are grouped by pen. Say which pens draw what."
-          : "What each layer draws. The reader guessed from the names and the lines; change any it got wrong."}
+        {v.kind === "picture"
+          ? "A picture has no layers: its ink is sorted into solid ink, pens and text. Say which of them draw what."
+          : v.kind === "pdf" && v.layers.some((l) => l.name.startsWith("Pen "))
+            ? "This PDF has no layers, so its lines are grouped by pen. Say which pens draw what."
+            : "What each layer draws. The reader guessed from the names and the lines; change any it got wrong."}
       </p>
       <ul className="scroll-thin flex max-h-[260px] flex-col overflow-y-auto rounded-md border border-line">
         {used.map((l) => (

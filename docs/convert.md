@@ -15,8 +15,8 @@ Drop files on the page or use *Add files*:
 | Autodesk Viewer link | See below. Arrives as model data, like the cloud route. |
 | Extracts `.eapk`, `ifcstudio-*.bin.gz`, `ifcstudio-*-tex*.png`, `ea-nwd-*.bin.gz` | Files saved by the bookmarklet (model data, properties and texture pictures), or by the earlier Etihad Arena extraction (older format, read as is). |
 | Floor plans `.dxf` | Read line by line in the browser (any release, R12 to 2018 and later, ASCII or binary). Each separate plan in the model space becomes a plan (step 2), so a ground floor and a first floor drawn side by side become two storeys. |
-| Floor plans `.pdf` | Pages drawn as line work (exported from CAD) are read like DXF, with the PDF's layers when it has them; scanned pages are traced. |
-| Floor plans `.png`, `.jpg`, … | Each image becomes a plan to trace (step 2). |
+| Floor plans `.pdf` | Pages drawn as line work (exported from CAD) are read like DXF, with the PDF's layers when it has them; scanned pages are read as pictures. |
+| Floor plans `.png`, `.jpg`, `.tif`, … | Scans, photos and images of plans: each is read as a picture, with its text (step 2). TIFF scans (including one-bit fax / CCITT G4) are opened in the browser. |
 | `.dwg` | Not read in the browser yet: save it as DXF (any version) or export a PDF, and add that. |
 | IFC `.ifc`, `.ifczip` | Passed through to the viewer hand-off. |
 
@@ -34,7 +34,7 @@ If the viewer was opened some other way, the panel cannot reach the app and offe
 
 ## 2. Floor plans
 
-Plans come in two ways. **DXF files and PDFs exported from CAD are read**: their walls, doors, windows, rooms and columns are recognised from the line work itself, exactly. **Scans and images are traced**: walls are found on the picture. Either way, *Edit* opens the plan in the editor, and everything found can be checked and corrected there before it is written.
+Plans come in two ways. **DXF files and PDFs exported from CAD are read** from their line work, exactly. **Scans, photos and images are read as pictures**: their ink is turned into line work and read the same way, with their text read by OCR for room names, dimensions and the scale. Either way walls, doors, windows, rooms and columns are found, *Edit* opens the plan in the editor, and everything found can be checked and corrected there before it is written. All of it runs in the browser: no service, no key.
 
 ### Reading DXF and CAD PDFs
 
@@ -52,16 +52,21 @@ Then, on the chosen layers:
 
 **Position**: a single DXF plan drawn near its origin keeps the drawing's coordinates. Otherwise the origin sits at each floor's lower-left corner, so floors of one drawing stack; *Pick origin* on a grid intersection aligns them exactly, and with a model.
 
-### Tracing scans and images
+### Reading scans, photos and images
 
-- **Scale**: for a PDF, type the drawing scale (1 : 100); for any plan, *Measure a known length* (click both ends of a dimension, type its length).
-- **Trace walls**: walls drawn *Filled* (solid poché), as *Two lines*, or as *One line*; thickness range, shortest wall, door gap. Thin lines (text, dimensions, hatching, furniture) are ignored, walls are squared to the plan's main directions and joined at corners, and the floor slab outline is the outside of the walls with door and window gaps closed. *Limit to an area* leaves out title blocks and details.
-- *Find rooms* finds the rooms the traced walls close.
+A picture is turned into line work, then read like a drawing:
+
+- **Ink**: uneven light (photos, shadows on scans) is evened out, then the ink is separated from the paper. Solid ink (filled walls, gray poché, solid columns) is outlined along its edges; everything else is thinned to its centre lines and split into straight lines and arcs. Lines are grouped by pen weight, arcs and circles kept apart (door swings), hatching recognised as such, and everything squared to the plan's directions so that lines on one line line up exactly, as in a CAD file. Heavy outlines that come in pairs are walls drawn as two lines, not solid walls; door leaves drawn heavy are leaves, not walls.
+- **Text**: lines of characters are found, cut out, turned level (text running up or down the sheet too) and read with Tesseract (tesseract.js, the English model), from the app's own copy of the engine; the model is kept in the browser after the first use. Room names and numbers name the rooms; dimension strings, written scales and room areas give the scale.
+- **Scale**: from the **dimension strings**, each measured against its own dimension line between the ticks on either side of it (units worked out from the values: millimetres, centimetres, metres, feet and inches); from the **written scale** (`SCALE 1:100`, `1/8" = 1'-0"`) with the picture's resolution (stored in PNG, JPEG and TIFF files) or the PDF page size; or, failing those, from the **door sizes**, then checked against the **room areas** written in the rooms. The editor says where it came from; *Measure a known length* overrides it.
+- **Photos** of a sheet on a desk are found and straightened: the sheet's corners are located, the perspective taken out (the sheet's proportions worked out from the perspective), and the picture read flat. *Adjust straightening* shows the original photo with the four corners to drag; *Use the original picture* undoes it.
+- **Picture** settings: the ink threshold, solid ink (automatic, from a width, or none for walls drawn as two lines), light lines on a dark background (blueprints), and *Read the picture again*. The inks show under *Layers* as *Solid ink*, *Thin / Medium / Heavy lines*, *Arcs and circles*, *Hatching* and *Text*, each with its role.
+- *Trace walls only* switches a picture to the older wall tracer (walls drawn *Filled*, as *Two lines* or as *One line*; no doors, windows or text); *Read the picture instead* goes back.
 
 ### Checking
 
 - **Storey**: name, elevation and wall height, or pick one of the model's storeys.
-- **Check**: select walls, doors, windows, rooms and columns to change or delete them (door kind and swing, room name and number, wall thickness); move wall ends; draw missing walls, doors and windows; drag the slab outline's corners. *Find rooms again* after changing walls.
+- **Check**: select walls, doors, windows, rooms and columns to change or delete them (door kind and swing, room name and number, wall thickness); move wall ends; draw missing walls, doors and windows; drag the slab outline's corners. *Outline a room*: click inside a room and its outline is found from the walls around it (gaps up to a door's width are bridged), named from the text in it. *Find rooms again* after changing walls.
 - **Door and window heights**: door height, window sill and height, height of plain openings.
 
 ### What is written
@@ -103,4 +108,4 @@ The *Asset register* card on the same page turns the model into asset data for f
 
 ## Performance
 
-Everything heavy runs in workers: reading and analysing models, writing IFC, building the preview, reading and tracing plans. A 51,000-line plan (36 copies of a 20 × 12 m office) is read in about 2 seconds. Writing the 88,000-element fire-protection model of the Etihad Arena took 14 s and gave a 330 MB file (measured on the command line with the same code). Output files are kept as Blobs, so leaving the page for the viewer and coming back keeps them.
+Everything heavy runs in workers: reading and analysing models, writing IFC, building the preview, reading and tracing plans. A 51,000-line plan (36 copies of a 20 × 12 m office) is read in about 2 seconds; a scanned plan of 2 to 5 megapixels is read, text included, in 2 to 5 seconds (the first time also loads the text reader, about 7 MB). Writing the 88,000-element fire-protection model of the Etihad Arena took 14 s and gave a 330 MB file (measured on the command line with the same code). Output files are kept as Blobs, so leaving the page for the viewer and coming back keeps them.

@@ -12,4 +12,5 @@ next-env.d.ts
 public/web-ifc
 public/fragments
 public/pdfjs
+public/ocr
 Claude outputs/*

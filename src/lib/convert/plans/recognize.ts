@@ -967,6 +967,11 @@ export function findRooms(walls: RecWall[], columns: RecColumn[], closers: [Pt, 
     }
     // Glazing lines and unpaired wall lines close rooms too (curtain walls, partitions drawn as one line).
     for (const [a, b] of closers) ras.line(a, b, 2);
+    // Wall ends that miss each other by a little (up to about a quarter metre, far less than a door) still close rooms.
+    {
+      const close = Math.round((0.12 * U) / res);
+      if (close >= 1) ras.data.set(closeGrid(ras.data, ras.w, ras.h, close));
+    }
     const { w, h, data } = ras;
     // Outside: flood from the border.
     const OUT = 2;
@@ -1099,6 +1104,128 @@ export function findRooms(walls: RecWall[], columns: RecColumn[], closers: [Pt, 
 // ---------------------------------------------------------------------------
 // Main
 
+/** Chessboard distance (cells) from every cell to the nearest cell equal to `value`. */
+function chessDistance(src: Uint8Array, w: number, h: number, value: number): Int32Array {
+  const d = new Int32Array(w * h).fill(1 << 29);
+  for (let i = 0; i < w * h; i++) if (src[i] === value) d[i] = 0;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (x > 0) d[i] = Math.min(d[i], d[i - 1] + 1);
+      if (y > 0) d[i] = Math.min(d[i], d[i - w] + 1);
+      if (x > 0 && y > 0) d[i] = Math.min(d[i], d[i - w - 1] + 1);
+      if (x < w - 1 && y > 0) d[i] = Math.min(d[i], d[i - w + 1] + 1);
+    }
+  for (let y = h - 1; y >= 0; y--)
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (x < w - 1) d[i] = Math.min(d[i], d[i + 1] + 1);
+      if (y < h - 1) d[i] = Math.min(d[i], d[i + w] + 1);
+      if (x < w - 1 && y < h - 1) d[i] = Math.min(d[i], d[i + w + 1] + 1);
+      if (x > 0 && y < h - 1) d[i] = Math.min(d[i], d[i + w - 1] + 1);
+    }
+  return d;
+}
+
+/** Walls (cells ≠ 0) closed by `r` cells: gaps up to 2r wide filled, everything else as it was. */
+function closeGrid(data: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const toWall = chessDistance(data, w, h, 1);
+  const grown = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) grown[i] = data[i] || toWall[i] <= r ? 1 : 0;
+  const toFree = chessDistance(grown, w, h, 0);
+  const closed = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) closed[i] = data[i] || toFree[i] > r ? 1 : 0;
+  return closed;
+}
+
+/**
+ * The room around a point (click-to-outline): the walls and columns drawn on a
+ * grid, gaps up to a door's width bridged, then the free area reached from
+ * the point. Null when the area is open to the outside.
+ */
+export function roomAt(walls: RecWall[], columns: RecColumn[], texts: RoomText[], unitScale: number, at: Pt): RecRoom | null {
+  const scale = unitScale;
+  const U = 1 / scale;
+  if (!walls.length) return null;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const w of walls)
+    for (const p of [w.a, w.b]) {
+      x0 = Math.min(x0, p[0] - w.t);
+      y0 = Math.min(y0, p[1] - w.t);
+      x1 = Math.max(x1, p[0] + w.t);
+      y1 = Math.max(y1, p[1] + w.t);
+    }
+  const margin = 1.5 * U;
+  const box: [number, number, number, number] = [Math.min(x0, at[0]) - margin, Math.min(y0, at[1]) - margin, Math.max(x1, at[0]) + margin, Math.max(y1, at[1]) + margin];
+  const span = Math.max(box[2] - box[0], box[3] - box[1]);
+  const res = Math.max(0.03 * U, span / 1500);
+  const ras = new Raster(box, res);
+  for (const w of walls) {
+    const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) || 1;
+    const nx = (-(w.b[1] - w.a[1]) / L) * (w.t / 2),
+      ny = ((w.b[0] - w.a[0]) / L) * (w.t / 2);
+    ras.fill([
+      [w.a[0] + nx, w.a[1] + ny],
+      [w.b[0] + nx, w.b[1] + ny],
+      [w.b[0] - nx, w.b[1] - ny],
+      [w.a[0] - nx, w.a[1] - ny],
+    ]);
+    ras.line(w.a, w.b, 2);
+  }
+  for (const c of columns) {
+    if (c.ring) ras.fill(c.ring);
+    else if (c.circle) ras.fill(Array.from({ length: 24 }, (_, i) => [c.circle!.c[0] + c.circle!.r * Math.cos((i / 24) * TAU), c.circle!.c[1] + c.circle!.r * Math.sin((i / 24) * TAU)] as Pt));
+  }
+  const { w, h, data } = ras;
+  // Bridge door-sized gaps: close the walls by 0.6 m.
+  const r = Math.max(1, Math.round((0.6 * U) / res));
+  const closed = closeGrid(data, w, h, r);
+  const [px, py] = ras.px(at);
+  const sx = Math.floor(px),
+    sy = Math.floor(py);
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return null;
+  const start = sy * w + sx;
+  if (closed[start]) return null;
+  const lab = new Int32Array(w * h).fill(-1);
+  const stack = [start];
+  lab[start] = 0;
+  let size = 0;
+  while (stack.length) {
+    const j = stack.pop()!;
+    size++;
+    const x = j % w,
+      y = Math.floor(j / w);
+    if (x === 0 || y === 0 || x === w - 1 || y === h - 1) return null; // open to the outside
+    for (const k of [j - 1, j + 1, j - w, j + w])
+      if (!closed[k] && lab[k] < 0) {
+        lab[k] = 0;
+        stack.push(k);
+      }
+  }
+  // Give back what the closing took from the room's own edges: grow the region into cells that are free in the walls themselves.
+  for (let pass = 0; pass < r; pass++) {
+    const add: number[] = [];
+    for (let i = 0; i < w * h; i++) {
+      if (lab[i] === 0 || data[i]) continue;
+      const x = i % w;
+      if ((x > 0 && lab[i - 1] === 0) || (x < w - 1 && lab[i + 1] === 0) || (i >= w && lab[i - w] === 0) || (i < w * (h - 1) && lab[i + w] === 0)) add.push(i);
+    }
+    if (!add.length) break;
+    for (const i of add) lab[i] = 0;
+  }
+  if (size * res * res * scale * scale < 0.3) return null;
+  // The boundary trace starts at the region's first cell in raster order.
+  const first = lab.indexOf(0);
+  const ring = simplifyRing(traceRegion(lab, w, h, 0, first), 0.9).map(([x, y]) => ras.unit(x, y));
+  if (ring.length < 3) return null;
+  const inside = texts.filter((t) => pointInRing(t.c[0], t.c[1], ring)).map((t) => ({ text: t.text, h: t.h }));
+  const { name, number } = roomLabel(inside);
+  return { ring, name, number, area: Math.abs(ringArea(ring)) * scale * scale, source: "walls" };
+}
+
 export function recognize(d: VectorDrawing, options: RecognizeOptions): Recognized {
   const started = Date.now();
   const scale = options.unitScale;
@@ -1159,7 +1286,9 @@ export function recognize(d: VectorDrawing, options: RecognizeOptions): Recogniz
 
   // Fill evidence: when most pairs lie in the wall fill, pairs outside it are not walls (corridors, shafts).
   let fillChecked = false;
-  let accepted = pieces.filter((p) => p.s1 - p.s0 >= 0.02 * U);
+  // Pictures: a piece much shorter than its thickness is no wall (slivers where lines meet at a hinge or a corner).
+  const sliver = d.source === "picture" ? 0.25 : 0;
+  let accepted = pieces.filter((p) => p.s1 - p.s0 >= Math.max(0.02 * U, sliver * p.t));
   if (wallFillRings.length) {
     const index = new RingIndex(wallFillRings, 2 * U);
     const inFill = (p: Piece) => {
@@ -1427,15 +1556,20 @@ export function recognize(d: VectorDrawing, options: RecognizeOptions): Recogniz
       const s = r.dx * p[0] + r.dy * p[1];
       return off <= r.t / 2 + 0.01 * U && s >= r.s0 - 0.01 * U && s <= r.s1 + 0.01 * U;
     });
-  // Window lines across a gap when the drawing has no window layers.
+  // Window lines across a gap when the drawing has no window layers (on a wall layer: lines along the wall only, e.g. pictures read with one pen).
   const gapHasLines = (run: Run, s0: number, s1: number) => {
     if (hasWindowLayer) return false;
     let covered = 0;
     for (let i = 0; i < n; i++) {
       const role = roles[d.segLayer[i]];
-      if (role === "ignore" || role === "wall" || role === "door" || d.segFlags[i] & F_DIM) continue;
+      if (role === "ignore" || role === "door" || d.segFlags[i] & F_DIM) continue;
       const a: Pt = [d.segs[i * 4], d.segs[i * 4 + 1]],
         b: Pt = [d.segs[i * 4 + 2], d.segs[i * 4 + 3]];
+      if (role === "wall") {
+        if (d.segFlags[i] & F_CURVE) continue;
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-9 || Math.abs((b[0] - a[0]) * run.dx + (b[1] - a[1]) * run.dy) / L < Math.cos((3 * Math.PI) / 180)) continue;
+      }
       const offA = -run.dy * a[0] + run.dx * a[1] - run.o,
         offB = -run.dy * b[0] + run.dx * b[1] - run.o;
       if (Math.abs(offA) > run.t / 2 + 0.02 * U || Math.abs(offB) > run.t / 2 + 0.02 * U) continue;
@@ -1447,66 +1581,101 @@ export function recognize(d: VectorDrawing, options: RecognizeOptions): Recogniz
     }
     return covered >= 0.8 * (s1 - s0);
   };
-  for (let x = 0; x < order.length; x++) {
-    const p = runs[order[x]];
-    if (p.dead) continue;
-    for (let y = x + 1; y < order.length; y++) {
-      const q = runs[order[y]];
-      if (q.th - p.th > angTol) break;
-      if (q.dead) continue;
-      const c = at(q, (q.s0 + q.s1) / 2);
-      const o = -p.dy * c[0] + p.dx * c[1];
-      if (Math.abs(o - p.o) > Math.max(0.01 * U, 0.15 * Math.min(p.t, q.t))) continue;
-      if (Math.abs(p.t - q.t) > Math.max(0.02 * U, 0.15 * Math.max(p.t, q.t))) continue;
-      const a = at(q, q.s0),
-        b = at(q, q.s1);
-      const qs0 = Math.min(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]),
-        qs1 = Math.max(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]);
-      // The space between the two runs, whichever comes first along the line.
-      const g0 = qs0 >= p.s1 ? p.s1 : qs1 <= p.s0 ? qs1 : 0,
-        g1 = qs0 >= p.s1 ? qs0 : qs1 <= p.s0 ? p.s0 : 0;
-      const gap = g1 - g0;
-      if (gap > 4.5 * U) continue;
-      const pi = order[x],
-        qi = order[y];
-      if (gap > 0) {
-        const inGap = spans.filter((s) => (s.run === pi || s.run === qi) && Math.min(s.s1, g1) - Math.max(s.s0, g0) > 0.4 * gap);
-        let take = false;
-        if (inGap.length) {
-          // The opening fits the gap: jamb to jamb.
-          inGap.sort((s, t) => (t.kind === "door" ? 1 : 0) - (s.kind === "door" ? 1 : 0));
-          const best = inGap[0];
-          const leaves = inGap.filter((s) => s.kind === "door" && s.arcs);
-          if (leaves.length >= 2) {
-            // Two leaves hinged at the two jambs: a double door.
-            const same = leaves[0].swing && leaves[1].swing && leaves[0].swing[0] * leaves[1].swing[0] + leaves[0].swing[1] * leaves[1].swing[1] > 0;
-            best.hinge = "both";
-            best.operation = same ? "DOUBLE_DOOR_SINGLE_SWING" : "DOUBLE_DOOR_DOUBLE_SWING";
-            best.arcs = 2;
+  // A wall running into the gap from the side, its centre line ending there (a T-junction a little wider than the wall that meets it).
+  const junctionInGap = (p: Run, g0: number, g1: number) =>
+    runs.some((r) => {
+      if (r.dead || Math.abs(r.dx * p.dx + r.dy * p.dy) > 0.5) return false;
+      if (r.t < 0.45 * (g1 - g0)) return false;
+      // Where r's centre line crosses p's.
+      const den = r.dx * p.dy - r.dy * p.dx;
+      if (Math.abs(den) < 1e-9) return false;
+      const ra = at(r, 0),
+        pa = at(p, 0);
+      const k = ((pa[0] - ra[0]) * p.dy - (pa[1] - ra[1]) * p.dx) / den;
+      const x: Pt = [ra[0] + r.dx * k, ra[1] + r.dy * k];
+      const sp = p.dx * x[0] + p.dy * x[1];
+      if (sp < g0 - 0.02 * U || sp > g1 + 0.02 * U) return false;
+      const sr = r.dx * x[0] + r.dy * x[1];
+      const reach = p.t / 2 + 0.06 * U;
+      return Math.min(Math.abs(sr - r.s0), Math.abs(sr - r.s1)) <= reach || (sr >= r.s0 && sr <= r.s1);
+    });
+  // Another run on the same line inside the gap: the two runs are not neighbours (yet).
+  const runInGap = (p: Run, pi: number, qi: number, g0: number, g1: number) =>
+    runs.some((r, k) => {
+      if (k === pi || k === qi || r.dead || Math.abs(r.dx * p.dx + r.dy * p.dy) < Math.cos(angTol)) return false;
+      const c = at(r, (r.s0 + r.s1) / 2);
+      if (Math.abs(-p.dy * c[0] + p.dx * c[1] - p.o) > Math.max(0.01 * U, 0.15 * Math.min(p.t, r.t))) return false;
+      const a = at(r, r.s0),
+        b = at(r, r.s1);
+      const rs0 = Math.min(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]),
+        rs1 = Math.max(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]);
+      return rs0 < g1 - 1e-6 * U && rs1 > g0 + 1e-6 * U;
+    });
+  for (let pass = 0, changed = true; changed && pass < 6; pass++) {
+    changed = false;
+    for (let x = 0; x < order.length; x++) {
+      const p = runs[order[x]];
+      if (p.dead) continue;
+      for (let y = x + 1; y < order.length; y++) {
+        const q = runs[order[y]];
+        if (q.th - p.th > angTol) break;
+        if (q.dead) continue;
+        const c = at(q, (q.s0 + q.s1) / 2);
+        const o = -p.dy * c[0] + p.dx * c[1];
+        if (Math.abs(o - p.o) > Math.max(0.01 * U, 0.15 * Math.min(p.t, q.t))) continue;
+        if (Math.abs(p.t - q.t) > Math.max(0.02 * U, 0.15 * Math.max(p.t, q.t))) continue;
+        const a = at(q, q.s0),
+          b = at(q, q.s1);
+        const qs0 = Math.min(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]),
+          qs1 = Math.max(p.dx * a[0] + p.dy * a[1], p.dx * b[0] + p.dy * b[1]);
+        // The space between the two runs, whichever comes first along the line.
+        const g0 = qs0 >= p.s1 ? p.s1 : qs1 <= p.s0 ? qs1 : 0,
+          g1 = qs0 >= p.s1 ? qs0 : qs1 <= p.s0 ? p.s0 : 0;
+        const gap = g1 - g0;
+        if (gap > 4.5 * U) continue;
+        const pi = order[x],
+          qi = order[y];
+        if (gap > 0 && runInGap(p, pi, qi, g0, g1)) continue;
+        if (gap > 0) {
+          const inGap = spans.filter((s) => (s.run === pi || s.run === qi) && Math.min(s.s1, g1) - Math.max(s.s0, g0) > 0.4 * gap);
+          let take = false;
+          if (inGap.length) {
+            // The opening fits the gap: jamb to jamb.
+            inGap.sort((s, t) => (t.kind === "door" ? 1 : 0) - (s.kind === "door" ? 1 : 0));
+            const best = inGap[0];
+            const leaves = inGap.filter((s) => s.kind === "door" && s.arcs);
+            if (leaves.length >= 2) {
+              // Two leaves hinged at the two jambs: a double door.
+              const same = leaves[0].swing && leaves[1].swing && leaves[0].swing[0] * leaves[1].swing[0] + leaves[0].swing[1] * leaves[1].swing[1] > 0;
+              best.hinge = "both";
+              best.operation = same ? "DOUBLE_DOOR_SINGLE_SWING" : "DOUBLE_DOOR_DOUBLE_SWING";
+              best.arcs = 2;
+            }
+            best.run = pi;
+            best.s0 = g0;
+            best.s1 = g1;
+            for (const other of inGap) {
+              if (other !== best) other.run = -1;
+            }
+            take = true;
+          } else if (gap * scale < 0.25 || pointInWall(at(p, (g0 + g1) / 2), -1) || junctionInGap(p, g0, g1)) take = true;
+          else if (gapHasLines(p, g0, g1)) {
+            spans.push({ run: pi, s0: g0, s1: g1, kind: "window", swing: null, hinge: null, operation: null, name: null });
+            take = true;
+          } else if (gap * scale <= 2.0) {
+            spans.push({ run: pi, s0: g0, s1: g1, kind: "opening", swing: null, hinge: null, operation: null, name: null });
+            take = true;
           }
-          best.run = pi;
-          best.s0 = g0;
-          best.s1 = g1;
-          for (const other of inGap) {
-            if (other !== best) other.run = -1;
-          }
-          take = true;
-        } else if (gap * scale < 0.25 || pointInWall(at(p, (g0 + g1) / 2), -1)) take = true;
-        else if (gapHasLines(p, g0, g1)) {
-          spans.push({ run: pi, s0: g0, s1: g1, kind: "window", swing: null, hinge: null, operation: null, name: null });
-          take = true;
-        } else if (gap * scale <= 2.0) {
-          spans.push({ run: pi, s0: g0, s1: g1, kind: "opening", swing: null, hinge: null, operation: null, name: null });
-          take = true;
+          if (!take) continue;
         }
-        if (!take) continue;
+        // Join q into p.
+        for (const s of spans) if (s.run === qi) s.run = pi;
+        p.s0 = Math.min(p.s0, qs0);
+        p.s1 = Math.max(p.s1, qs1);
+        p.t = Math.max(p.t, q.t);
+        q.dead = true;
+        changed = true;
       }
-      // Join q into p.
-      for (const s of spans) if (s.run === qi) s.run = pi;
-      p.s0 = Math.min(p.s0, qs0);
-      p.s1 = Math.max(p.s1, qs1);
-      p.t = Math.max(p.t, q.t);
-      q.dead = true;
     }
   }
   const live = runs.map((r, i) => (r.dead ? -1 : i));
