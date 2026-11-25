@@ -188,6 +188,13 @@ for (const f of FIELDS) {
 
 export const FIELD_BY_ID = new Map(FIELDS.map((f) => [f.id, f]));
 
+/** Normalised technical values of an asset, in the order the Technical Data sheet lists them. */
+export const TECHNICAL_COLUMNS = [
+  "airflow", "waterFlow", "coolingCapacity", "sensibleCapacity", "heatingCapacity", "motorPower", "esp", "pumpHead", "refrigerant", "refrigerantCharge", "efficiency",
+  "voltage", "phases", "ratedCurrent", "connectedLoad", "ipRating", "weight", "tankVolume", "lampPower", "luminousFlux", "colourTemperature", "emergencyType",
+  "emergencyDuration", "liftCapacity", "liftSpeed", "liftPersons", "floorsServed",
+];
+
 export const FIELD_GROUP_LABELS: Record<FieldGroup, string> = {
   identity: "Identity",
   product: "Product",

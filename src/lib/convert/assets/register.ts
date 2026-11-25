@@ -17,7 +17,7 @@ import { classify } from "../classify";
 import { hashGuid } from "../ifc/step";
 import { ifcTypeClass, ifcClass } from "../ifc/schema";
 import { levelIndex, storeyFor, type StoreyDef } from "../storeys";
-import { cleanText, durationYears, FIELD_BY_ID, FIELDS, groupRank, nameUnit, normaliseName, parseDate, parseDuration, parseNumber, parseUnit, parseYear, unitWord, type DurationUnit, type FieldDef } from "./fields";
+import { cleanText, durationYears, FIELD_BY_ID, FIELDS, groupRank, TECHNICAL_COLUMNS, nameUnit, normaliseName, parseDate, parseDuration, parseNumber, parseUnit, parseYear, unitWord, type DurationUnit, type FieldDef } from "./fields";
 import { assetKind, familyUniclass, systemUniclass, type AssetKind, type Discipline, type Trait } from "./kinds";
 import { parseDistributionSystem, parseElectricalData, parseQuantity } from "./quantities";
 import { buildElectrical, type RegisterElectrical } from "./electrical";
@@ -1552,7 +1552,6 @@ export function buildRegister(input: RegisterInput, options: AssetOptions, onPro
 
   const properties = [...assetKeyCounts].filter(([key]) => ownKey(key)).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
   const categories = [...categoryCounts].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count, asset: assetCategories.has(name) }));
-  const technical = FIELDS.filter((f) => f.group === "technical" || (f.group === "electrical" && f.kind === "quantity")).map((f) => f.id);
   return {
     floors,
     spaces,
@@ -1581,7 +1580,8 @@ export function buildRegister(input: RegisterInput, options: AssetOptions, onPro
       boards: electrical.boards.filter((b) => b.inModel).length,
       circuits: electrical.circuits.length,
       fireDevices: registerAssets.filter((a) => a.discipline === "Fire & life safety" || a.compliance === "Fire safety" || a.compliance === "Emergency lighting").length,
-      withTechnical: registerAssets.filter((a) => technical.some((id) => a.values[id])).length,
+      // The assets the Technical Data sheet lists, so the count and the sheet agree.
+      withTechnical: registerAssets.filter((a) => TECHNICAL_COLUMNS.some((id) => a.values[id])).length,
     },
   };
 }

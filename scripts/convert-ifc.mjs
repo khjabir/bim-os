@@ -36,7 +36,7 @@ import { Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createInflateRaw } from "node:zlib";
-import { createIfcScanner } from "../src/lib/collection/ifc-scan.mjs";
+import { createIfcScanner, ifcHeaderProblem } from "../src/lib/collection/ifc-scan.mjs";
 import { findRepeats, isClutterPath, modelKind, planModels } from "../src/lib/collection/plan.mjs";
 import { MergeError, summariseFragments } from "../src/lib/fragments/merge-fragments.mjs";
 import {
@@ -286,7 +286,13 @@ async function convertFile(inputPath, outputArgument, onlyEntry) {
     const start = head.subarray(0, readSync(input, head, 0, head.length, 0));
     const zipped = startsLikeZip(start) || (/\.(ifczip|zip)$/i.test(inputPath) && !startsLikeStep(start));
     if (zipped) await convertArchive(input, inputPath, size, outputArgument, onlyEntry);
-    else await convert({ file: input, start: 0, size, label: inputPath }, resolve(outputArgument ?? defaultOutput(inputPath)));
+    else {
+      // Files that are not IFC make the engine crash with errors that say nothing; say what is wrong instead.
+      const top = new Uint8Array(65536);
+      const problem = ifcHeaderProblem(top.subarray(0, readSync(input, top, 0, top.length, 0)), size <= top.length);
+      if (problem) throw new ZipError(problem);
+      await convert({ file: input, start: 0, size, label: inputPath }, resolve(outputArgument ?? defaultOutput(inputPath)));
+    }
   } finally {
     closeSync(input);
   }

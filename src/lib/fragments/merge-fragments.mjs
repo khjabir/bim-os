@@ -127,8 +127,14 @@ class Reader {
  */
 export function summariseFragments(bytes) {
   const reader = new Reader(bytes);
-  const model = reader.root();
-  const meshes = reader.table(model, MODEL.meshes);
+  let model, meshes;
+  try {
+    model = reader.root();
+    meshes = reader.table(model, MODEL.meshes);
+  } catch {
+    // Data that is not a Fragments file sends the reader outside it.
+    meshes = 0;
+  }
   if (!meshes) throw new MergeError("This is not a Fragments model.");
   let schema = "";
   try {
@@ -384,8 +390,14 @@ export function createFragmentsMerger(options) {
   return {
     add(bytes, info) {
       const reader = new Reader(bytes);
-      const model = reader.root();
-      const meshes = reader.table(model, MODEL.meshes);
+      let model, meshes;
+      try {
+        model = reader.root();
+        meshes = reader.table(model, MODEL.meshes);
+      } catch {
+        // Data that is not a Fragments file sends the reader outside it.
+        meshes = 0;
+      }
       if (!meshes) throw new MergeError(`${info.name} is not a Fragments model.`);
       const maxAt = reader.field(model, MODEL.maxLocalId);
       const maxLocalId = maxAt ? reader.view.getUint32(maxAt, true) : 0;

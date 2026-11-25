@@ -419,14 +419,34 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
 }
 
 /** A labelled form control. */
-export function FormRow({ label, hint, children, className }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <label className={clsx("flex min-w-0 flex-col gap-1", className)}>
+export function FormRow({
+  label,
+  hint,
+  children,
+  className,
+  group,
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /** The row holds several controls (choice buttons, removable chips). It is then a group, not a <label>: a click on a label's caption presses the first control inside it. */
+  group?: boolean;
+}) {
+  const body = (
+    <>
       <span className="text-[11.5px] font-medium text-fg-2">{label}</span>
       {children}
       {hint ? <span className="text-[11px] leading-snug text-fg-3">{hint}</span> : null}
-    </label>
+    </>
   );
+  if (group)
+    return (
+      <div role="group" aria-label={typeof label === "string" ? label : undefined} className={clsx("flex min-w-0 flex-col gap-1", className)}>
+        {body}
+      </div>
+    );
+  return <label className={clsx("flex min-w-0 flex-col gap-1", className)}>{body}</label>;
 }
 
 export const inputCls = "h-8 w-full min-w-0 rounded-md border border-line-strong bg-surface px-2 text-[12.5px] text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none disabled:opacity-50";

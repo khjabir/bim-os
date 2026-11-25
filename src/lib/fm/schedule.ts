@@ -16,6 +16,26 @@ export function todayIso(): string {
   return isoDate(new Date());
 }
 
+/**
+ * The local calendar day of a stored timestamp. Timestamps are kept in UTC, so their first ten characters are
+ * the UTC day, which is yesterday or tomorrow for part of every day away from Greenwich. A plain date comes
+ * back as it is.
+ */
+export function dayOf(at: string | undefined): string {
+  if (!at) return "";
+  if (at.length <= 10) return at;
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? at.slice(0, 10) : isoDate(d);
+}
+
+/** A stored timestamp as local date and time, "YYYY-MM-DD HH:MM" (for exports people read). */
+export function localStamp(at: string | undefined): string {
+  if (!at) return "";
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return at.replace("T", " ").slice(0, 16);
+  return `${isoDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function parseIso(date: string): Date {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(y, (m || 1) - 1, d || 1);

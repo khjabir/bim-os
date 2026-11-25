@@ -17,7 +17,7 @@ import { alarmText, numeric } from "@/lib/fm/alarms";
 import { ALWAYS_SHOWN, FIELD_GROUPS, fieldLabel, isEdited, missingKeyFields, modelValue, statusOf, TOP_FIELDS, valueOf } from "@/lib/fm/asset";
 import { filterText } from "@/lib/fm/filter";
 import { labelPayload, qrSvg } from "@/lib/fm/qr";
-import { daysBetween, dueState, isOpen, todayIso } from "@/lib/fm/schedule";
+import { dayOf, daysBetween, dueState, isOpen, todayIso } from "@/lib/fm/schedule";
 import { addPhotos, createWorkOrders, deletePhoto, editAssets, photoBlob, revertEdit, savePlans, uid, updatePlan, useFm } from "@/lib/fm/store";
 import { intervalText } from "@/lib/fm/tasks";
 import type { Asset, Unit } from "@/lib/fm/types";
@@ -88,7 +88,7 @@ function Details({ asset }: { asset: Asset }) {
         <div className="flex items-start gap-2 rounded-md border border-ok/30 bg-ok-soft px-2.5 py-2 text-[12px] text-fg">
           <CheckCircle2 size={15} className="mt-px shrink-0 text-ok" />
           <div className="min-w-0 flex-1">
-            Checked on site by <b>{asset.verified.by}</b> on {formatDate(asset.verified.at.slice(0, 10))}
+            Checked on site by <b>{asset.verified.by}</b> on {formatDate(dayOf(asset.verified.at))}
             {asset.verified.condition ? ` · condition ${asset.verified.condition} of 5` : ""}
             {asset.verified.notes ? <div className="mt-0.5 text-fg-2">{asset.verified.notes}</div> : null}
           </div>
@@ -232,7 +232,7 @@ export function FieldRow({ asset, field }: { asset: Asset; field: string }) {
       </div>
       {edit && !editing ? (
         <div className="mt-0.5 pl-[38%] text-[11px] text-fg-3">
-          Model: {modelValue(asset, field) || "empty"} · changed by {edit.by}, {formatDate(edit.at.slice(0, 10))}
+          Model: {modelValue(asset, field) || "empty"} · changed by {edit.by}, {formatDate(dayOf(edit.at))}
         </div>
       ) : null}
       {offer ? (
@@ -487,7 +487,7 @@ function PhotosTab({ asset }: { asset: Asset }) {
                 <div className="aspect-square" />
               )}
               <figcaption className="truncate px-1.5 py-1 text-[10.5px] text-fg-3">
-                {formatDate(p.at.slice(0, 10))} · {p.by}
+                {formatDate(dayOf(p.at))} · {p.by}
               </figcaption>
               <button type="button" aria-label="Delete photo" onClick={() => deletePhoto(p.id)} className="absolute right-1 top-1 hidden rounded bg-surface/90 p-1 text-bad group-hover:block">
                 <Trash2 size={12} />

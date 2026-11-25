@@ -146,7 +146,9 @@ export class LmvSession {
     } catch {
       // Nothing was running.
     }
-    await new Promise<void>((resolve) => AV.Initializer(options, () => resolve()));
+    // Autodesk's viewer reports usage (page address, a device id, the model's address) to an analytics service
+    // unless told not to. This app does not want that: nothing but the model itself goes to Autodesk.
+    await new Promise<void>((resolve) => AV.Initializer({ ...options, optOutTrackingByDefault: true, disableAnalytics: true }, () => resolve()));
 
     const viewer = new AV.GuiViewer3D(container, { disabledExtensions: { bimwalk: true, hyperlink: true } });
     const startCode = viewer.start();

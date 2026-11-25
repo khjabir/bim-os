@@ -13,7 +13,7 @@ import { Button, Callout } from "@/components/ui/primitives";
 import { pushToast } from "@/lib/store";
 import { KEY_FIELDS, statusOf, valueOf } from "@/lib/fm/asset";
 import { codeFromScan } from "@/lib/fm/qr";
-import { isOpen, todayIso } from "@/lib/fm/schedule";
+import { dayOf, isOpen, todayIso } from "@/lib/fm/schedule";
 import { assetItems, norm, parseQuery, scoreItem } from "@/lib/fm/search";
 import { addPhotos, updateFacility, useFm, verifyAssets } from "@/lib/fm/store";
 import { importFile, shareChanges } from "@/lib/fm/sync";
@@ -131,7 +131,7 @@ function FieldHome({ onScan, onOpen }: { onScan: () => void; onOpen: (id: string
   }, []);
   const byId = new Map(assets.map((a) => [a.id, a]));
   const today = todayIso();
-  const checkedToday = assets.filter((a) => a.verified?.at.slice(0, 10) === today).length;
+  const checkedToday = assets.filter((a) => dayOf(a.verified?.at) === today).length;
   const mine = workOrders.filter((w) => isOpen(w) && (!w.assignee || w.assignee === facility.user)).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8);
   const changed = assets.filter((a) => (a.edits && Object.keys(a.edits).length) || a.verified || a.photos?.length).length;
 
@@ -280,7 +280,7 @@ function FieldAsset({ asset, onBack }: { asset: Asset; onBack: () => void }) {
       </section>
 
       <div className="grid grid-cols-3 gap-2">
-        <BigAction icon={CheckCircle2} label={asset.verified?.at.slice(0, 10) === todayIso() ? "Checked" : "Check"} tone={asset.verified ? "ok" : undefined} onClick={() => setChecking(true)} />
+        <BigAction icon={CheckCircle2} label={dayOf(asset.verified?.at) === todayIso() ? "Checked" : "Check"} tone={asset.verified ? "ok" : undefined} onClick={() => setChecking(true)} />
         <BigAction icon={Camera} label={photos.length ? `Photo (${photos.length})` : "Photo"} onClick={() => photoInput.current?.click()} />
         <BigAction icon={AlertTriangle} label="Fault" tone="bad" onClick={() => setFault(true)} />
       </div>
@@ -299,7 +299,7 @@ function FieldAsset({ asset, onBack }: { asset: Asset; onBack: () => void }) {
 
       {asset.verified ? (
         <p className="px-1 text-[12px] text-fg-3">
-          Last checked {formatDate(asset.verified.at.slice(0, 10))} by {asset.verified.by}
+          Last checked {formatDate(dayOf(asset.verified.at))} by {asset.verified.by}
           {asset.verified.condition ? `, condition ${asset.verified.condition} of 5` : ""}.
         </p>
       ) : null}

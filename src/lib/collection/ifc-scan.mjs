@@ -86,6 +86,30 @@ const isSpace = (/** @type {number} */ byte) => byte === 0x20 || byte === 0x0a |
 const isNameByte = (/** @type {number} */ byte) => (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39) || byte === 0x5f;
 
 /**
+ * Why a file cannot be read as IFC, judged by its first bytes, or null when nothing speaks against it.
+ * The IFC engine fails on such files with errors that say nothing ("Cannot read properties of undefined",
+ * "memory access out of bounds"), so they are caught here first.
+ * @param {Uint8Array} head the first bytes of the file (64 KB is plenty)
+ * @param {boolean} [whole] true when `head` is the whole file
+ * @returns {string | null}
+ */
+export function ifcHeaderProblem(head, whole = false) {
+  if (head.length === 0) return "The file is empty.";
+  let text = "";
+  for (let i = 0; i < head.length; i++) text += String.fromCharCode(head[i]);
+  // A UTF-8 byte order mark, blank lines and comments may come first.
+  const start = text.replace(/^\xEF\xBB\xBF/, "").replace(/^(\s|\/\*[\s\S]*?\*\/)+/, "");
+  if (/^<(\?xml|ifcXML|[a-z]+:ifcXML)/i.test(start)) return "This is an XML file. ifcXML is not read: save the model as .ifc (IFC in the STEP format).";
+  if (!/^ISO-10303-21\s*;/i.test(start)) return "This is not an IFC file: it does not begin with ISO-10303-21, as IFC files do.";
+  // Only judged when the whole header is in view.
+  const end = start.search(/ENDSEC\s*;/i);
+  if ((end >= 0 || whole) && !/FILE_SCHEMA\s*\(/i.test(end >= 0 ? start.slice(0, end) : start)) {
+    return "This IFC file does not say which IFC version it is (its header has no FILE_SCHEMA), so it cannot be read. It may be cut off or damaged.";
+  }
+  return null;
+}
+
+/**
  * Decodes a STEP string body: doubled quotes and the \X2\, \X4\, \X\ and \S\ escapes.
  * @param {string} text
  */

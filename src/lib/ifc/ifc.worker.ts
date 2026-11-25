@@ -11,6 +11,7 @@
 // client, which is what gives the WebAssembly heap back to the browser.
 
 import * as FRAGS from "@thatopen/fragments";
+import { ifcHeaderProblem } from "@/lib/collection/ifc-scan.mjs";
 import { announceReady } from "@/lib/utils/worker-ready";
 import { extendImporter } from "./importer-config";
 import type { ConvertOptions, ConvertPhase, IfcWorkerRequest, IfcWorkerResponse } from "./protocol";
@@ -33,6 +34,9 @@ async function convert(file: Blob, options: ConvertOptions) {
 
   const size = file.size;
   const reader = new FileReaderSync();
+  // Files that are not IFC make the engine fail with errors that say nothing; say what is wrong instead.
+  const problem = ifcHeaderProblem(new Uint8Array(reader.readAsArrayBuffer(file.slice(0, 65536))), size <= 65536);
+  if (problem) throw new Error(problem);
   let furthest = 0;
   let lastReported = -1;
   let phase: ConvertPhase = "reading";

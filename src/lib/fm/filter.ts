@@ -1,12 +1,13 @@
 // The Assets page's search box: free words plus field filters such as
 // `kind:pump floor:L03 room:"EV.214" status:incomplete missing:serial`.
-// A quoted value must match the whole field; an unquoted one may be part of it.
+// A quoted value must match the whole field; an unquoted one may be part of it
+// (except a status, which is always matched whole: "complete" is part of "incomplete").
 
 import { fieldLabel, KEY_FIELDS, missingKeyFields, statusOf, valueOf } from "./asset";
 import { norm } from "./search";
 import type { Asset } from "./types";
 
-export const FILTER_FIELDS: Record<string, { label: string; values: (a: Asset) => string[] }> = {
+export const FILTER_FIELDS: Record<string, { label: string; values: (a: Asset) => string[]; whole?: boolean }> = {
   kind: { label: "Kind", values: (a) => [a.kind, a.kindCode] },
   floor: { label: "Floor", values: (a) => [valueOf(a, "floor")] },
   room: { label: "Room", values: (a) => [valueOf(a, "space"), a.roomName] },
@@ -16,7 +17,7 @@ export const FILTER_FIELDS: Record<string, { label: string; values: (a: Asset) =
   type: { label: "Type", values: (a) => [a.typeName] },
   category: { label: "Category", values: (a) => [a.category] },
   discipline: { label: "Discipline", values: (a) => [a.discipline] },
-  status: { label: "Status", values: (a) => [statusOf(a)] },
+  status: { label: "Status", values: (a) => [statusOf(a)], whole: true },
   missing: { label: "Missing", values: (a) => missingKeyFields(a).flatMap((f) => [f, fieldLabel(f)]) },
   fed: { label: "Fed from", values: (a) => [a.fedFrom] },
 };
@@ -74,8 +75,9 @@ export function matchesAsset(a: Asset, query: AssetQuery, hay: string): boolean 
       if (!missingMatches(a, filter.value)) return false;
       continue;
     }
-    const values = FILTER_FIELDS[filter.field].values(a).filter(Boolean).map(norm);
-    if (filter.exact ? !values.includes(filter.value) : !values.some((v) => v.includes(filter.value))) return false;
+    const def = FILTER_FIELDS[filter.field];
+    const values = def.values(a).filter(Boolean).map(norm);
+    if (filter.exact || def.whole ? !values.includes(filter.value) : !values.some((v) => v.includes(filter.value))) return false;
   }
   return true;
 }

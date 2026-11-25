@@ -20,6 +20,7 @@
 //   - Positions in metres, Z up, in the file's own coordinates.
 
 import * as WEBIFC from "web-ifc";
+import { ifcHeaderProblem } from "@/lib/collection/ifc-scan.mjs";
 import { prettyCategory } from "@/lib/utils/ifc-names";
 import type { JobData, JobHeader, PropsData, RawSourceJob } from "./bundle";
 import type { StoreyDef } from "./storeys";
@@ -1500,9 +1501,12 @@ function ifcApi(wasmPath: string): Promise<Api> {
 
 /** Reads an IFC file (in a worker: the file is pulled in through FileReaderSync, never whole in JS memory). */
 export async function readIfcFile(blob: Blob, fileName: string, jobName: string, wasmPath: string, onProgress?: ProgressFn): Promise<IfcSource> {
-  const api = await ifcApi(wasmPath);
   const reader = new FileReaderSync();
   const size = blob.size;
+  // Files that are not IFC make the engine fail with errors that say nothing; say what is wrong instead.
+  const problem = ifcHeaderProblem(new Uint8Array(reader.readAsArrayBuffer(blob.slice(0, 65536))), size <= 65536);
+  if (problem) throw new Error(problem);
+  const api = await ifcApi(wasmPath);
   let furthest = 0;
   let reported = -1;
   const modelID = api.OpenModelFromCallback(

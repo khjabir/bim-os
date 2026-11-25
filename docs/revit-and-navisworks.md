@@ -12,9 +12,9 @@ Revit's file format is proprietary, so there are two ways in, switchable in the 
 
 ## Navisworks viewer (`/nwd`)
 
-Navisworks files can only be read by Autodesk software, so this viewer needs Autodesk Platform Services. The file is uploaded and translated, then shown in Autodesk's own viewer, which is loaded from Autodesk's servers when you open a model. Its toolbar gives you navigation, measuring, sectioning, a model browser and a property panel.
+Navisworks files can only be read by Autodesk software, so this viewer needs Autodesk Platform Services. The file is uploaded and translated, then shown in Autodesk's own viewer, which is loaded from Autodesk's servers when you open a model. Its toolbar gives you navigation, measuring, sectioning, a model browser and a property panel. Autodesk's viewer can report usage to an analytics service (the page address, a device id, the model's address); this app starts it with that reporting switched off.
 
-The side panel adds what the request asked for:
+The side panel adds:
 
 - **Selection** at three levels (part, object, assembly), with zoom, isolate and hide.
 - **Groups** by level of the model tree or by any property, and a search by name or property value. Clicking a group selects it.

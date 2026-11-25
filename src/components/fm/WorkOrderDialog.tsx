@@ -121,7 +121,7 @@ function Form({ onClose, assetIds, defaults, onCreated }: { onClose: () => void;
             ))}
           </datalist>
         </FormRow>
-        <FormRow label="Assets">
+        <FormRow label="Assets" group>
           <AssetPicker value={ids} onChange={setIds} />
         </FormRow>
         <FormRow label="Details">

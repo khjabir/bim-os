@@ -55,7 +55,7 @@ DWG reading through the optional add-on (GNU LibreDWG, libredwg-web 0.9.3) was t
 
 - **Every drawing in LibreDWG's test data** (141 DWG files, from R1.4 to the 2018 format) converted to DXF without a crash or a read error, the slowest in 1.3 s (Node, one process per file).
 - **Against DXF from other software.** 55 of those drawings come with a DXF of the same drawing that LibreDWG did not write. The app read the add-on's DXF and the reference DXF alike (release, layers with their colours and on/off state, entity counts, block references with their position, rotation and scale, mirrored ones included, texts and line work) for 42 of the 43 drawings in the 2000 to 2018 formats; in the 43rd, one entity comes back on layer `0` instead of a layer the reference calls `0 @ 1`. Of the three R13 and R14 drawings, one read alike and two lost two anonymous block references each (old-style hatching; the R13 one most of its hatch lines). Of nine drawings older than R13, four read alike and five lost or gained a polyline or a block.
-- **Floor plans with known answers.** The test office plan in six variants (doors and windows as blocks, exploded doors, polylines and MTEXT, MLINE walls, German layer names, metres without units) was saved as DWG in the 2000 format with LibreDWG's own `dxf2dwg` and read back through the add-on: every wall, door, window, room with its name and number, column and the outline was found, as from the DXF (70 checks). LibreDWG's DWG writer is experimental, and some files it wrote were broken (checked with LibreDWG's own tools): mirrored blocks needed a one-line fix to its writer, its R14 files had every layer switched off, and in its files of two plans side by side, and of the Revit-style plan, entities after a point were in the file but missing from model space. Those cases were left out; AutoCAD's own R13 and R14 drawings above read with their layers' colours and states, and its mirrored blocks with their scale.
+- **Floor plans with known answers.** The test office plan in six variants (doors and windows as blocks, exploded doors, polylines and MTEXT, MLINE walls, German layer names, metres without units) was saved as DWG in the 2000 format with LibreDWG's own `dxf2dwg` and read back through the add-on: every wall, door, window, room with its name and number, column and the outline was found, as from the DXF (79 checks). LibreDWG's DWG writer is experimental, and some files it wrote were broken (checked with LibreDWG's own tools): mirrored blocks needed a one-line fix to its writer, its R14 files had every layer switched off, and in its files of two plans side by side, and of the Revit-style plan, entities after a point were in the file but missing from model space. Those cases were left out; AutoCAD's own R13 and R14 drawings above read with their layers' colours and states, and its mirrored blocks with their scale.
 - **In the browser** (Chromium, production build): without the add-on, a DWG gets the message and nothing is requested from `/addons/`; with it, the office plan as DWG (2000 format) was read in 1.5 s with every element found, generated, and its IFC passed IfcOpenShell's validation with the walls cut by the openings' exact volume; the plan with German layer names and a 2018-format drawing saved by AutoCAD read too; a file that is not a DWG and a cut-off DWG got their messages. No console errors.
 
 libredwg-web 0.7.17, 0.8.0, 0.9.0, 0.9.3 and 0.9.4 were run on the same files (0.8.7 to 0.8.9 crash converting to DXF): the 0.9 releases read 47 of the 55 drawings alike, 0.8.0 46 (it lost line work in a 2000-format drawing) and 0.7.17 43. Real DWG floor plans from practice were not available for testing.
@@ -105,6 +105,43 @@ The facility workspace's core (storage, edits and their reversal, checks, the ta
 
 **Not tested:** printing labels on a real label printer, scanning a printed label with a phone (the browser's code reader needs a real camera), Safari and Firefox, brokers behind TLS (`wss://`) and the share sheet on real phones.
 
+## Regression pass, November 2026
+
+After the DWG add-on, the whole app was gone through again from a written plan, on one production build: 299 checks, each against a known answer, in a headless browser (Chromium), on the command line and with other software. The library checks named in the sections above were run again with them and give the same results.
+
+| Area | Checks |
+| --- | --- |
+| App shell, navigation and search | 19 |
+| Facility workspace, home and settings, with dates in two time zones | 12 |
+| Assets, with a register of 40,320 assets | 28 |
+| Maintenance | 17 |
+| Labels and the field app | 13 |
+| Live data | 16 |
+| Onboarding | 13 |
+| IFC viewer and model analysis | 38 |
+| Revit page, Navisworks page, and the Autodesk cloud routes against the stand-in | 45 |
+| Convert: models, the viewer link, the asset register and COBie | 22 |
+| Convert: floor plans from DXF, PDF, DWG and pictures | 27 |
+| On-device assistant | 16 |
+| Command line, installing and offline use, server routes | 28 |
+| The development build, and a production build without the DWG add-on | 5 |
+
+What the app writes was opened with other software: IFC files and IDS results with IfcOpenShell, workbooks with openpyxl, the Brick file with rdflib, QR codes with OpenCV and label sheets with pypdf.
+
+New in this pass:
+
+- **Revit.** Two public test projects (MIT licence), a 0.9 MB Revit 2023 project and a 34 MB Revit 2024 project, against the element counts the reader's own project records for them. The 34 MB project read in the browser in about 35 s with the counts of Revit's own IFC export: 970 elements (360 walls, 256 columns, 132 doors, 116 spaces, 80 slabs, 20 shading devices, 6 windows) on 15 storeys, and its 138 doors and windows cut openings in their walls.
+- **The official IDS cases through the panel.** buildingSMART's 307 test cases were opened in the IFC viewer one by one, model then specification: the panel's verdict agrees on 290, as stated under [IDS coverage](ifc-viewer.md#ids-coverage), and the other 17 are the kinds listed there (13 on surface styles, 3 on materials, 1 on a predefined property set). None of them passes a model that should fail.
+- **Dates.** Site checks, due dates and exports with the device in Los Angeles and in Dubai.
+- **Selections as IFC.** A wall with real openings keeps its openings, door and window; a door brings its wall; the files pass IfcOpenShell's validation.
+- **Installing and offline use.** The web manifest, the service worker, the field app with the network off, and a site check recorded offline and still there afterwards.
+- **Server routes.** Every route without credentials, called from another site, with bad input, and with a reference to a file outside the app's own bucket.
+- **Builds and scripts.** A clean `npm ci`, the command-line scripts (the `.frag` written on the command line is the browser's, byte for byte, apart from the model's random id), `npm run addon:dwg` and its removal, a production build without the add-on, and every page on the development server without React warnings.
+
+The pass found fourteen defects, fixed with it: `status:complete` in the asset search also matched incomplete assets; dates were cut to their UTC day, so away from Greenwich a site check could show the day before or after; captions in the work order, site check and live point forms acted as buttons; a live point added from a topic showed no value until its next message; readings imported from CSV could be lost on a quick reload; the sample IDS file was not valid IDS 1.0; choosing the *Fast* render style twice raised an error; the hover highlight was off until a tool had been changed; Autodesk's viewer reported usage to an analytics service (now switched off, see [Navisworks viewer](revit-and-navisworks.md#navisworks-viewer-nwd)); Autodesk's notes on a translation were shown with their markup; a room renamed in the plan editor kept the type of its old name; a double door next to a corner in a plan with MLINE walls was read as two doors; the count of assets with technical data was one higher than the sheet; and files that are not readable IFC or Fragments files were refused with the engine's own error.
+
+Not covered by the pass, as before: the real Autodesk and Anthropic services, the on-device assistant on a real graphics processor, Safari and Firefox, and real phones, cameras and printers.
+
 ## Known limits
 
 Other limits worth knowing:
@@ -117,4 +154,7 @@ Other limits worth knowing:
 - Pictures: the text reader knows English only (other Latin-script names are read with some errors); stairs, curtain walls and grids are not recognised; on scans and photos doors and rooms are found less often than on clean pictures (see above).
 - The ground grid is drawn in the *Fast* render style only.
 - The Navisworks viewer is set up for the US, EMEA and AUS regions.
+- The in-browser Revit reader recovers no building elements from family files (`.rfa`); its report says what it left out.
+- The *Open folder* dialog counts elements with a quick scan that leaves out rooms, so its count can be lower than the one in the model list once the model is open.
+- If the app's storage bucket is deleted at Autodesk while the server is running, uploads fail with *Bucket not found* until the server is restarted (seen with the stand-in).
 - The facility workspace lives in one browser on one device; devices share it as files, and a workspace file is opened as a whole (change files are merged).

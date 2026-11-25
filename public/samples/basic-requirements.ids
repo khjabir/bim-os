@@ -2,9 +2,9 @@
 <ids xmlns="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd">
   <info>
     <title>Basic information requirements</title>
+    <version>1.0</version>
     <description>A small starter set of requirements that most coordination models are expected to meet. Edit it or replace it with your project's IDS.</description>
     <author>ifc-studio@example.com</author>
-    <version>1.0</version>
     <purpose>Coordination</purpose>
   </info>
   <specifications>

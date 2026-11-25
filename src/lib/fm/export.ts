@@ -5,6 +5,7 @@
 import { FIELDS } from "../convert/assets/fields";
 import { writeXlsx, type Cell, type SheetDef } from "../utils/xlsx";
 import { fieldLabel, modelValue, statusOf, valueOf } from "./asset";
+import { dayOf, localStamp } from "./schedule";
 import { intervalText } from "./tasks";
 import type { Asset, Facility, Plan, WorkOrder } from "./types";
 
@@ -71,7 +72,7 @@ export function assetTable(assets: Asset[]): { header: string[]; rows: Cell[][] 
     a.uniclass,
     ...fields.map((f) => valueOf(a, f)),
     STATUS_WORDS[statusOf(a)],
-    a.verified?.at.slice(0, 10) ?? "",
+    dayOf(a.verified?.at),
     a.verified?.by ?? "",
     a.verified?.condition ?? "",
     a.verified?.notes ?? "",
@@ -90,7 +91,7 @@ export async function assetWorkbook(facility: Facility | null, assets: Asset[]):
   const { header, rows } = assetTable(assets);
   const changes: Cell[][] = [];
   for (const a of assets)
-    for (const [field, edit] of Object.entries(a.edits ?? {})) changes.push([valueOf(a, "code"), valueOf(a, "name"), fieldLabel(field), modelValue(a, field), edit.value, edit.by, edit.at.replace("T", " ").slice(0, 16), a.id]);
+    for (const [field, edit] of Object.entries(a.edits ?? {})) changes.push([valueOf(a, "code"), valueOf(a, "name"), fieldLabel(field), modelValue(a, field), edit.value, edit.by, localStamp(edit.at), a.id]);
   const sheets: SheetDef[] = [
     { name: "Assets", columns: header.map((h) => ({ header: h })), rows, tab: "2563EB" },
     { name: "Changes", columns: ["Asset code", "Name", "Field", "Model value", "New value", "Changed by", "Changed at", "GlobalId"].map((h) => ({ header: h })), rows: changes, tab: "B45309" },
@@ -115,7 +116,7 @@ export function workOrderTable(workOrders: WorkOrder[], assetById: Map<string, A
       assets.map((a) => valueOf(a, "code")).join(", "),
       [...new Set(assets.map((a) => valueOf(a, "space")).filter(Boolean))].join(", "),
       w.description,
-      w.createdAt.slice(0, 10),
+      dayOf(w.createdAt),
       w.createdBy,
       w.completedAt?.slice(0, 10) ?? "",
       w.completedBy ?? "",
@@ -129,7 +130,7 @@ export function workOrderTable(workOrders: WorkOrder[], assetById: Map<string, A
 export async function workOrderWorkbook(facility: Facility | null, workOrders: WorkOrder[], assetById: Map<string, Asset>): Promise<Blob> {
   const { header, rows } = workOrderTable(workOrders, assetById);
   const log: Cell[][] = [];
-  for (const w of workOrders) for (const l of w.log) log.push([w.number, l.at.replace("T", " ").slice(0, 16), l.by, l.text]);
+  for (const w of workOrders) for (const l of w.log) log.push([w.number, localStamp(l.at), l.by, l.text]);
   return writeXlsx(
     [
       { name: "Work orders", columns: header.map((h) => ({ header: h })), rows, tab: "2563EB" },

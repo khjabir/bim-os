@@ -223,7 +223,6 @@ export class ViewerEngine {
       opacity: 0.35,
       depthTest: false,
     });
-    hoverer.enabled = true;
     this.hoverer = hoverer;
 
     this.hider = components.get(OBC.Hider);
@@ -257,6 +256,8 @@ export class ViewerEngine {
       measurer.list.onItemDeleted.add(() => this.syncMeasurements());
       measurer.list.onCleared.add(() => this.syncMeasurements());
     }
+    // Last, because switching the volume measurer off also switches the hover highlight off.
+    hoverer.enabled = true;
 
     // --- DOM events ----------------------------------------------------
     const onDoubleClick = () => {
@@ -443,7 +444,11 @@ export class ViewerEngine {
       return await this.addFragments(bytes, { ...options, name, source: "frag", sourceBytes: file.size }, taskId);
     } catch (error) {
       console.warn(`Failed to load ${name}`, error);
-      pushToast("error", `${name}: ${error instanceof Error ? error.message : String(error)}`);
+      // The engine answers data that is not a Fragments model with its own error and a stack trace.
+      const raw = error instanceof Error ? error.message : String(error);
+      const notFragments = /Malformed fragments|incorrect header check|invalid (stored )?block|invalid distance|unexpected end of (file|data)|outside the bounds/i.test(raw);
+      const message = notFragments ? "This is not a Fragments (.frag) file, or it is damaged." : raw.split("\n")[0].replace(/^Error:\s*/, "");
+      pushToast("error", `${name}: ${message}`);
       return null;
     } finally {
       removeTask(taskId);
@@ -972,7 +977,8 @@ export class ViewerEngine {
     if (!renderer) return;
     const post = renderer.postproduction;
     if (style === "basic") {
-      post.enabled = false;
+      // Switching the effects off before they were ever on throws inside the engine ("Base pass not initialized").
+      if (post.enabled) post.enabled = false;
     } else {
       post.enabled = true;
       post.style = style === "pen" ? OBF.PostproductionAspect.COLOR_PEN : OBF.PostproductionAspect.COLOR_PEN_SHADOWS;

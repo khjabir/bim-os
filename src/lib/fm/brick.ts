@@ -4,6 +4,7 @@
 // asset's kind and each point's kind; they are suggestions to check.
 
 import { valueOf } from "./asset";
+import { todayIso } from "./schedule";
 import type { Asset, Facility, Point, PointKind, Space } from "./types";
 
 const EQUIPMENT: Record<string, string> = {
@@ -81,7 +82,7 @@ export function brickTurtle(facility: Facility, assets: Asset[], spaces: Space[]
     "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .",
     `@prefix bldg: <${ns}> .`,
     "",
-    `# ${facility.name}: written by bim-os on ${new Date().toISOString().slice(0, 10)}. Classes are suggested from asset and point kinds; check them before use.`,
+    `# ${facility.name}: written by bim-os on ${todayIso()}. Classes are suggested from asset and point kinds; check them before use.`,
     "",
   ];
   const site = `bldg:site_${slug(facility.siteCode || facility.site || "site")}`;

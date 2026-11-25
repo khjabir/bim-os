@@ -20,7 +20,7 @@ import { parseReadingsCsv, useLive } from "@/lib/fm/live/runtime";
 import { fileStem } from "@/lib/fm/package";
 import { assetMatcher, guessKind, nameFromKey } from "@/lib/fm/pointmatch";
 import { norm } from "@/lib/fm/search";
-import { acknowledgeAlarms, assetMap, clearClosedAlarms, deletePoints, ingestReadings, saveSources, uid, upsertPoints, useFm } from "@/lib/fm/store";
+import { acknowledgeAlarms, assetMap, clearClosedAlarms, deletePoints, flushSeries, ingestReadings, saveSources, uid, upsertPoints, useFm } from "@/lib/fm/store";
 import type { AlarmRule, LiveSource, Point, PointKind } from "@/lib/fm/types";
 import { AssetPicker } from "../WorkOrderDialog";
 import { ago, Empty, formatDateTime, FormRow, inputCls, Modal, Panel, plural, Tabs, textareaCls, useParam, WorkspaceGate } from "../ui";
@@ -128,6 +128,8 @@ function PointsTab() {
       return { id: `${d.sourceId}|${d.key}`, sourceId: d.sourceId, key: d.key, name: nameFromKey(d.key, asset), unit: guess.unit, kind: guess.kind, assetId: asset?.id };
     });
     upsertPoints(created);
+    // What each topic last sent goes to its new point, so it does not read "never" until the next message.
+    ingestReadings(list.map((d) => ({ pointId: `${d.sourceId}|${d.key}`, t: d.lastAt, v: d.value })));
     useLive.setState((s) => {
       const next = { ...s.discovered };
       for (const d of list) delete next[`${d.sourceId}|${d.key}`];
@@ -338,7 +340,7 @@ function PointDialog({ point, onClose }: { point: Point; onClose: () => void }) 
             <input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="°C, %, kW…" />
           </FormRow>
         </div>
-        <FormRow label="Asset" hint="Readings and alarms show on the asset's page.">
+        <FormRow label="Asset" hint="Readings and alarms show on the asset's page." group>
           <AssetPicker value={assetIds} onChange={(ids) => setAssetIds(ids.slice(-1))} />
         </FormRow>
         {!assetIds.length ? (
@@ -490,7 +492,10 @@ function SourcesTab() {
       });
     upsertPoints(fresh);
     // Points have to exist before their readings are taken in.
-    setTimeout(() => ingestReadings(readings), 0);
+    setTimeout(() => {
+      ingestReadings(readings);
+      flushSeries();
+    }, 0);
     pushToast("success", `${plural(readings.length, "reading")} for ${plural(keys.length, "point")} imported${fresh.length ? ` (${fresh.length} new)` : ""}${skipped ? `; ${skipped} rows skipped` : ""}.`);
   };
 

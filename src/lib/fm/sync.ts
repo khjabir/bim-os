@@ -4,6 +4,7 @@
 import { changesFile, packageName, readPackage, type ReadPackage } from "./package";
 import { addPhotoRecords, mergeAssetChanges, mergeWorkOrders, replaceWorkspace, useFm, userName, workspaceData } from "./store";
 import { workspaceFile } from "./package";
+import { dayOf } from "./schedule";
 
 /** Shares (on phones) or downloads this device's changes. Returns what went into the file. */
 export async function shareChanges(): Promise<{ assets: number; workOrders: number; photos: number; shared: boolean } | null> {
@@ -75,5 +76,5 @@ export async function importFile(file: Blob): Promise<ImportResult> {
   const workOrders = mergeWorkOrders(changes.workOrders);
   const parts = [`${assets} asset${assets === 1 ? "" : "s"} updated`, `${workOrders} work order${workOrders === 1 ? "" : "s"} added or updated`];
   if (pkg.photos.length) parts.push(`${pkg.photos.length} photo${pkg.photos.length === 1 ? "" : "s"}`);
-  return { kind: "changes", text: `Changes from ${changes.by} (${changes.exportedAt.slice(0, 10)}): ${parts.join(", ")}.${other ? ` They were made in "${changes.facilityName}"; only assets with the same ids were updated.` : ""}` };
+  return { kind: "changes", text: `Changes from ${changes.by} (${dayOf(changes.exportedAt)}): ${parts.join(", ")}.${other ? ` They were made in "${changes.facilityName}"; only assets with the same ids were updated.` : ""}` };
 }

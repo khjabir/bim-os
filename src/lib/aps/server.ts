@@ -258,6 +258,31 @@ interface ManifestMessage {
   type?: string;
   code?: string;
   message?: string | string[];
+  args?: unknown;
+}
+
+/**
+ * A translator message as plain text. Autodesk's translators write some of them as markup with numbered
+ * placeholders, e.g. "<message>Missing link files: <ul>{0}</ul></message>" with args ["<li>A.rvt</li>"].
+ */
+export function plainMessage(message: ManifestMessage): string {
+  const raw = Array.isArray(message.message) ? message.message.join(" ") : (message.message ?? "");
+  const args = Array.isArray(message.args) ? message.args : [];
+  return raw
+    .replace(/\{(\d+)\}/g, (_, index: string) => {
+      const value = args[Number(index)];
+      return typeof value === "string" || typeof value === "number" ? String(value) : "";
+    })
+    .replace(/<\/li>\s*<li>/gi, ", ")
+    .replace(/<\/?[a-z][^<>]{0,60}>/gi, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .replace(/ ([,.;:])/g, "$1")
+    .trim();
 }
 
 interface ManifestNode {
@@ -307,7 +332,7 @@ export async function translationStatus(urn: string, outputType: "ifc" | "svf2")
   let hasViewable = false;
   walk(derivative ? [derivative] : [], (node) => {
     for (const message of node.messages ?? []) {
-      const text = Array.isArray(message.message) ? message.message.join(" ") : message.message;
+      const text = plainMessage(message);
       if (text) messages.push(message.code ? `${text} (${message.code})` : text);
     }
     if (node.urn && (node.role === "ifc" || /\.ifc$/i.test(node.urn))) ifcDerivativeUrn = node.urn;

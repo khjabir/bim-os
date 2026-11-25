@@ -13,15 +13,10 @@
 //   nothing.
 
 import { writeXlsx, type Cell, type HeaderStyle, type SheetDef } from "@/lib/utils/xlsx";
-import { cleanText, durationYears, FIELD_BY_ID, FIELD_GROUP_LABELS, FIELDS, isoDuration, parseDuration, parseNumber, parseUnit, unitWord } from "./fields";
+import { cleanText, durationYears, FIELD_BY_ID, FIELD_GROUP_LABELS, FIELDS, isoDuration, parseDuration, parseNumber, parseUnit, TECHNICAL_COLUMNS, unitWord } from "./fields";
 import type { AssetRegister, RegisterAsset } from "./register";
 
-/** Normalised technical values of an asset, in the order the sheets list them. */
-export const TECHNICAL_COLUMNS = [
-  "airflow", "waterFlow", "coolingCapacity", "sensibleCapacity", "heatingCapacity", "motorPower", "esp", "pumpHead", "refrigerant", "refrigerantCharge", "efficiency",
-  "voltage", "phases", "ratedCurrent", "connectedLoad", "ipRating", "weight", "tankVolume", "lampPower", "luminousFlux", "colourTemperature", "emergencyType",
-  "emergencyDuration", "liftCapacity", "liftSpeed", "liftPersons", "floorsServed",
-];
+export { TECHNICAL_COLUMNS };
 export const FIRE_COLUMNS = ["firePanel", "loop", "address", "fireZone", "fireRating", "activationTemperature", "kFactor", "sprinklerResponse", "coverageArea", "damperActuation", "extinguisherType", "emergencyType", "emergencyDuration"];
 
 /** "Airflow (L/s)" */

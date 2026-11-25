@@ -9,6 +9,7 @@ import { Button, Callout, Input, Segmented, Select, Spinner } from "@/components
 import { readPicture, recognizePlan, setLayerRole, setPictureSettings, straightenPicture, traceInstead } from "@/lib/convert/actions";
 import type { Selection } from "@/lib/convert/plans/planEdits";
 import { ROLE_LABELS, type LayerRole } from "@/lib/convert/plans/recognize";
+import { typeRoomsByName } from "@/lib/convert/plans/roomTypes";
 import { paperColor } from "@/lib/convert/plans/vector";
 import { updatePlan, type PlanItem, type PlanVector } from "@/lib/convert/store";
 import { formatNumber } from "@/lib/utils/format";
@@ -289,7 +290,8 @@ export function SelectionEditor({ plan, sel, mpp, onDelete }: { plan: PlanItem; 
       <div className="flex flex-col gap-2 rounded-md border border-line p-2" data-testid="plan-selection">
         <div className="grid grid-cols-[1fr_88px] gap-2">
           <Field label="Room name">
-            <Input value={r.name ?? ""} onChange={(e) => set({ name: e.target.value || null })} aria-label="Room name" />
+            {/* A type that came from the name follows the new name; one set by hand or by the assistant stays. */}
+            <Input value={r.name ?? ""} onChange={(e) => set(typeRoomsByName([{ ...r, name: e.target.value || null }])[0])} aria-label="Room name" />
           </Field>
           <Field label="Number">
             <Input value={r.number ?? ""} onChange={(e) => set({ number: e.target.value || null })} aria-label="Room number" />

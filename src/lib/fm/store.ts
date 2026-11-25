@@ -408,7 +408,8 @@ export function updateWorkOrder(id: string, patch: Partial<WorkOrder>, note?: st
     next.completedAt = patch.completedAt ?? at;
     next.completedBy = by;
     const plan = wo.planId ? s.plans.find((p) => p.id === wo.planId) : undefined;
-    if (plan) savePlans([completePlan(plan, (next.completedAt ?? at).slice(0, 10) || todayIso())]);
+    // A completion date chosen in the dialog arrives as that local day plus a time; without one, the day is today here.
+    if (plan) savePlans([completePlan(plan, patch.completedAt ? patch.completedAt.slice(0, 10) : todayIso())]);
   }
   useFm.setState((st) => ({ workOrders: st.workOrders.map((w) => (w.id === id ? next : w)), rev: st.rev + 1 }));
   void persist(() => putMany("workOrders", [next]));
@@ -497,21 +498,35 @@ function applyAlarmChanges(alarms: Alarm[], changes: AlarmChanges): { alarms: Al
 let seriesDirty = new Set<string>();
 let seriesTimer: ReturnType<typeof setTimeout> | null = null;
 
+function writeSeries() {
+  const ids = [...seriesDirty];
+  if (!ids.length) return;
+  seriesDirty = new Set();
+  const s = useFm.getState();
+  const known = new Set(s.points.map((p) => p.id));
+  const rows = ids.filter((id) => known.has(id)).map((pointId) => ({ pointId, values: s.series[pointId] ?? [] }));
+  const points = s.points.filter((p) => ids.includes(p.id));
+  void persist(async () => {
+    await putMany("series", rows);
+    await putMany("points", points);
+  });
+}
+
 function scheduleSeriesWrite() {
   if (seriesTimer) return;
   seriesTimer = setTimeout(() => {
     seriesTimer = null;
-    const ids = [...seriesDirty];
-    seriesDirty = new Set();
-    const s = useFm.getState();
-    const known = new Set(s.points.map((p) => p.id));
-    const rows = ids.filter((id) => known.has(id)).map((pointId) => ({ pointId, values: s.series[pointId] ?? [] }));
-    const points = s.points.filter((p) => ids.includes(p.id));
-    void persist(async () => {
-      await putMany("series", rows);
-      await putMany("points", points);
-    });
+    writeSeries();
   }, 2000);
+}
+
+/** Writes the readings taken in so far at once. Streams can wait two seconds; an imported file should not be lost to a reload. */
+export function flushSeries() {
+  if (seriesTimer) {
+    clearTimeout(seriesTimer);
+    seriesTimer = null;
+  }
+  writeSeries();
 }
 
 export interface Reading {

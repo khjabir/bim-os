@@ -6,6 +6,7 @@
 
 import { entryDataOffset, readZipEntries, type ZipEntry } from "../ifc/zip-archive.mjs";
 import { ZipWriter } from "../utils/zip-writer";
+import { todayIso } from "./schedule";
 import type { Asset, Photo, WorkOrder, WorkspaceData } from "./types";
 
 const MANIFEST = "bimos.json";
@@ -119,7 +120,7 @@ export async function readPackage(file: Blob): Promise<ReadPackage> {
 /** "Harbour View Offices-assets-2026-03-14": a file name for an export, without its extension. */
 export function fileStem(facilityName: string, suffix = ""): string {
   const base = (facilityName || "facility").replace(/[\\/:*?"<>|]+/g, "-").trim();
-  const date = new Date().toISOString().slice(0, 10);
+  const date = todayIso();
   return `${base}${suffix ? `-${suffix}` : ""}-${date}`;
 }
 

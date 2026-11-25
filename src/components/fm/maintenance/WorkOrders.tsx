@@ -13,7 +13,7 @@ import { downloadBlob } from "@/lib/utils/download";
 import { valueOf } from "@/lib/fm/asset";
 import { workOrderWorkbook } from "@/lib/fm/export";
 import { fileStem } from "@/lib/fm/package";
-import { isOpen, todayIso } from "@/lib/fm/schedule";
+import { dayOf, isOpen, todayIso } from "@/lib/fm/schedule";
 import { norm } from "@/lib/fm/search";
 import { assetMap, updateWorkOrder, useFm } from "@/lib/fm/store";
 import type { Priority, WorkOrder, WorkOrderStatus } from "@/lib/fm/types";
@@ -140,7 +140,7 @@ export function WorkOrdersTab() {
           {list.length > 1000 ? <div className="border-t border-line p-2 text-center text-[12px] text-fg-3">The first 1,000 of {list.length.toLocaleString()} are shown; search or filter to find the others.</div> : null}
         </div>
       )}
-      <SidePanel open={Boolean(open)} onClose={() => setWoId(null)} title={open ? `${open.number} · ${open.title}` : ""} subtitle={open ? `${open.kind.charAt(0).toUpperCase()}${open.kind.slice(1)} · created ${formatDate(open.createdAt.slice(0, 10))} by ${open.createdBy}` : ""} width={560}>
+      <SidePanel open={Boolean(open)} onClose={() => setWoId(null)} title={open ? `${open.number} · ${open.title}` : ""} subtitle={open ? `${open.kind.charAt(0).toUpperCase()}${open.kind.slice(1)} · created ${formatDate(dayOf(open.createdAt))} by ${open.createdBy}` : ""} width={560}>
         {open ? <WorkOrderDetail wo={open} /> : null}
       </SidePanel>
     </div>
@@ -213,7 +213,7 @@ export function WorkOrderDetail({ wo, compactView }: { wo: WorkOrder; compactVie
           <FormRow label="Details" className="col-span-2">
             <textarea className={textareaCls} rows={3} defaultValue={wo.description} onBlur={(e) => e.target.value.trim() !== wo.description && updateWorkOrder(wo.id, { description: e.target.value.trim() })} />
           </FormRow>
-          <FormRow label="Assets" className="col-span-2">
+          <FormRow label="Assets" className="col-span-2" group>
             <AssetPicker value={wo.assetIds} onChange={(ids) => updateWorkOrder(wo.id, { assetIds: ids })} />
           </FormRow>
         </div>

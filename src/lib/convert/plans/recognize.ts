@@ -1423,6 +1423,7 @@ export function recognize(d: VectorDrawing, options: RecognizeOptions): Recogniz
     // Either end of the swing may be the closed leaf along the wall: take the one whose span is the gap.
     let found: Span | null = null;
     let foundFree = -1;
+    let foundOutside = Infinity;
     for (let e = 0; e < 2; e++) {
       const closed = ends[e],
         open = ends[1 - e];
@@ -1433,10 +1434,15 @@ export function recognize(d: VectorDrawing, options: RecognizeOptions): Recogniz
       const s0 = Math.min(host.s, host.s + dirS * a.r),
         s1 = Math.max(host.s, host.s + dirS * a.r);
       const free = freeShare(host.run, s0, s1);
-      if (free <= foundFree) continue;
+      // Where walls run through their doors (MLINE walls) neither span is a gap. A door is hinged on its own
+      // wall, so the wall the hinge sits on wins over one it only comes near (a door next to a corner).
+      const outside = Math.max(0, Math.abs(host.off) - r.t / 2);
+      const tie = Math.abs(free - foundFree) <= 1e-6;
+      if (tie ? outside >= foundOutside : free < foundFree) continue;
       const normal: Pt = [-r.dy, r.dx];
       const side = open[0] * normal[0] + open[1] * normal[1];
       foundFree = free;
+      foundOutside = outside;
       found = {
         run: host.run,
         s0,

@@ -35,3 +35,9 @@ export function decodeStepText(text: string): string;
 
 /** How many of `part` are in `whole`. */
 export function countShared(whole: Set<string>, part: string[]): number;
+
+/**
+ * Why a file cannot be read as IFC, judged by its first bytes (64 KB is plenty), as a sentence for the user;
+ * null when nothing speaks against it. Pass `whole` when the bytes are the whole file.
+ */
+export function ifcHeaderProblem(head: Uint8Array, whole?: boolean): string | null;

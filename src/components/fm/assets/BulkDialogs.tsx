@@ -163,7 +163,7 @@ export const CONDITIONS = [
 
 export function ConditionField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <FormRow label="Condition">
+    <FormRow label="Condition" group>
       <div className="grid grid-cols-5 gap-1">
         {CONDITIONS.map((c) => (
           <button

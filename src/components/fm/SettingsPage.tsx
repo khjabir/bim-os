@@ -10,6 +10,7 @@ import { Button, Callout } from "@/components/ui/primitives";
 import { pushToast } from "@/lib/store";
 import { formatBytes } from "@/lib/utils/format";
 import { requestPersistence, storageEstimate } from "@/lib/fm/db";
+import { dayOf } from "@/lib/fm/schedule";
 import { clearWorkspace, updateFacility, useFm } from "@/lib/fm/store";
 import { exportWorkspace, importFile, type ImportResult } from "@/lib/fm/sync";
 import type { Facility } from "@/lib/fm/types";
@@ -54,7 +55,7 @@ function FacilityPanel({ facility }: { facility: Facility }) {
         <Text label="App address for QR labels" value={facility.labelBaseUrl} onSave={(v) => set({ labelBaseUrl: v.replace(/\/+$/, "") })} hint="Labels then open the asset in the field app when scanned with a phone camera." placeholder="https://fm.example.com" />
       </div>
       <p className="mt-3 text-[11.5px] text-fg-3">
-        Onboarded from {facility.source === "demo" ? "the demo" : facility.source === "ifc" ? "IFC models" : facility.source === "file" ? "a workspace file" : "models"} on {facility.createdAt.slice(0, 10)}.
+        Onboarded from {facility.source === "demo" ? "the demo" : facility.source === "ifc" ? "IFC models" : facility.source === "file" ? "a workspace file" : "models"} on {dayOf(facility.createdAt)}.
       </p>
     </Panel>
   );
